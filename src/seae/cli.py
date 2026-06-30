@@ -41,7 +41,7 @@ def cmd_synthetic() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="seae")
+    parser = argparse.ArgumentParser(prog="sear")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_sum = sub.add_parser("summarize")
     p_sum.add_argument("--zip-path", required=True)

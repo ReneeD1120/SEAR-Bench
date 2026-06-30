@@ -1,6 +1,6 @@
-# Structured Evidence Agent
+# SEAR-Bench
 
-Agentic reasoning over structured evidence for time-varying factor validity.
+Structured Evidence Agentic Reasoning for regime-aware factor validity.
 
 ## What this repo does
 
@@ -18,4 +18,3 @@ source .venv/bin/activate
 pip install -e .
 python -m seae.cli summarize --zip-path /Users/renee/Downloads/RAFPO/不复权.zip
 ```
-

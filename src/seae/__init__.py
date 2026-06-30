@@ -1,2 +1,1 @@
-"""Structured evidence agentic reasoning experiments."""
-
+"""SEAR-Bench: structured evidence agentic reasoning experiments."""

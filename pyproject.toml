@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "structured-evidence-agent"
+name = "sear-bench"
 version = "0.1.0"
-description = "Structured-evidence agentic reasoning benchmark for alpha factors"
+description = "Structured Evidence Agentic Reasoning benchmark for regime-aware factor validity"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
+sear = "seae.cli:main"
 seae = "seae.cli:main"
 
 [tool.setuptools]
@@ -21,4 +22,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
