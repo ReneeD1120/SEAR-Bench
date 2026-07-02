@@ -8,7 +8,7 @@ import pandas as pd
 from .data import load_zip_archive
 from .evidence import FactorEvidence
 from .evidence import split_time_evidence
-from .factors import add_basic_features, factor_series_map
+from .factors import factor_series_map
 from .judge import LinearEvidenceJudge, fit_judge_from_rows, rule_based_judge
 from .synthetic import SyntheticConfig, generate_synthetic_benchmark
 
@@ -43,6 +43,18 @@ def _labels_for_synthetic_factor(family: str, factor_name: str) -> dict[str, obj
         "intraday_lag": {"label_keep": 0, "active_regime": "none"},
         "spread": {"label_keep": 1, "active_regime": "low_vol"},
         "interaction": {"label_keep": 1, "active_regime": "high_vol"},
+        "volume_volatility": {"label_keep": 1, "active_regime": "high_vol"},
+        "volume_volatility_zscore": {"label_keep": 1, "active_regime": "high_vol"},
+        "volume_volatility_lag": {"label_keep": 1, "active_regime": "high_vol"},
+        "volume_volatility_rank": {"label_keep": 1, "active_regime": "high_vol"},
+        "volume_volatility_minmax": {"label_keep": 1, "active_regime": "high_vol"},
+        "candlestick": {"label_keep": 0, "active_regime": "none"},
+        "candlestick_zscore": {"label_keep": 0, "active_regime": "none"},
+        "candlestick_lag": {"label_keep": 0, "active_regime": "none"},
+        "candlestick_rank": {"label_keep": 0, "active_regime": "none"},
+        "candlestick_minmax": {"label_keep": 0, "active_regime": "none"},
+        "candlestick_spread": {"label_keep": 0, "active_regime": "none"},
+        "price_level": {"label_keep": 0, "active_regime": "none"},
     }
     if family in truth:
         return truth[family]
@@ -54,7 +66,7 @@ def _labels_for_synthetic_factor(family: str, factor_name: str) -> dict[str, obj
 
 
 def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, tuple[str, pd.Series]]:
-    factors = factor_series_map(df, bank="alpha360" if synthetic else "alpha158")
+    factors = factor_series_map(df, bank="alpha360")
     if synthetic:
         factors["noise_factor"] = ("noise", df["noise_factor"])
     return factors
@@ -79,6 +91,14 @@ def _factor_rows(
             "evidence": ev,
             "train_ic": ev.train_ic,
             "test_ic": ev.test_ic,
+            "train_strategy_mean_return": ev.strategy_mean_return,
+            "train_strategy_sharpe": ev.strategy_sharpe,
+            "train_strategy_cum_return": ev.strategy_cum_return,
+            "train_strategy_max_drawdown": ev.strategy_max_drawdown,
+            "test_strategy_mean_return": ev.test_strategy_mean_return,
+            "test_strategy_sharpe": ev.test_strategy_sharpe,
+            "test_strategy_cum_return": ev.test_strategy_cum_return,
+            "test_strategy_max_drawdown": ev.test_strategy_max_drawdown,
         }
         if synthetic:
             row.update(_labels_for_synthetic_factor(family, factor_name))
@@ -90,6 +110,10 @@ def summarize_family_scores(table: pd.DataFrame) -> pd.DataFrame:
     agg_dict = {
         "mean_train_ic": ("train_ic", "mean"),
         "mean_test_ic": ("test_ic", "mean"),
+        "mean_test_strategy_return": ("test_strategy_mean_return", "mean"),
+        "mean_test_strategy_sharpe": ("test_strategy_sharpe", "mean"),
+        "mean_test_strategy_cum_return": ("test_strategy_cum_return", "mean"),
+        "mean_test_strategy_max_drawdown": ("test_strategy_max_drawdown", "mean"),
         "n_obs": ("factor_name", "count"),
     }
     if "label_keep" in table.columns:
@@ -107,10 +131,37 @@ def summarize_family_scores(table: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
+def summarize_family_ablation(table: pd.DataFrame) -> pd.DataFrame:
+    agg_dict = {
+        "factor_rows": ("factor_name", "count"),
+        "unique_factors": ("factor_name", "nunique"),
+        "mean_train_ic": ("train_ic", "mean"),
+        "mean_test_ic": ("test_ic", "mean"),
+        "mean_test_strategy_return": ("test_strategy_mean_return", "mean"),
+        "mean_test_strategy_sharpe": ("test_strategy_sharpe", "mean"),
+        "mean_test_strategy_cum_return": ("test_strategy_cum_return", "mean"),
+        "mean_test_strategy_max_drawdown": ("test_strategy_max_drawdown", "mean"),
+    }
+    if "label_keep" in table.columns:
+        agg_dict["truth_keep_rate"] = ("label_keep", "mean")
+    if "decision" in table.columns:
+        table = table.assign(_keep_flag=(table["decision"] == "keep").astype(float))
+        agg_dict["judge_keep_rate"] = ("_keep_flag", "mean")
+    return (
+        table.groupby("family", as_index=False)
+        .agg(**agg_dict)
+        .sort_values(["mean_test_strategy_sharpe", "mean_test_ic"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
 def build_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, object]:
     family_agg = {
         "mean_train_ic": ("train_ic", "mean"),
         "mean_test_ic": ("test_ic", "mean"),
+        "mean_test_strategy_return": ("test_strategy_mean_return", "mean"),
+        "mean_test_strategy_sharpe": ("test_strategy_sharpe", "mean"),
+        "mean_test_strategy_cum_return": ("test_strategy_cum_return", "mean"),
         "factor_count": ("factor_name", "count"),
     }
     if "label_keep" in table.columns:
@@ -123,16 +174,26 @@ def build_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, objec
     family_summary = (
         table.groupby("family", as_index=False)
         .agg(**family_agg)
-        .sort_values("mean_test_ic", ascending=False)
+        .sort_values(["mean_test_strategy_sharpe", "mean_test_ic"], ascending=False)
         .head(top_k)
     )
-    top_cols = ["symbol", "family", "factor_name", "train_ic", "test_ic"]
+    top_cols = [
+        "symbol",
+        "family",
+        "factor_name",
+        "train_ic",
+        "test_ic",
+        "test_strategy_mean_return",
+        "test_strategy_sharpe",
+        "test_strategy_cum_return",
+    ]
     if "label_keep" in table.columns:
         top_cols.append("label_keep")
     if "decision" in table.columns:
         top_cols.append("decision")
-    top_factors = table.sort_values("test_ic", ascending=False).loc[:, top_cols].head(top_k * 3)
+    top_factors = table.sort_values(["test_strategy_sharpe", "test_ic"], ascending=False).loc[:, top_cols].head(top_k * 3)
     return {
+        "decision_boundary": "LLM/agent should only read these structured fields; benchmark labels and returns are computed outside the LLM.",
         "family_summary": family_summary.to_dict(orient="records"),
         "top_factors": top_factors.to_dict(orient="records"),
     }
@@ -178,6 +239,10 @@ def run_synthetic_experiment(
                 "rule_regime": rule_pred["active_regime"],
                 "rule_confidence": rule_pred["confidence"],
                 "test_ic": row["test_ic"],
+                "test_strategy_mean_return": row["test_strategy_mean_return"],
+                "test_strategy_sharpe": row["test_strategy_sharpe"],
+                "test_strategy_cum_return": row["test_strategy_cum_return"],
+                "test_strategy_max_drawdown": row["test_strategy_max_drawdown"],
             }
         )
     pred = pd.DataFrame(pred_rows)
@@ -189,6 +254,10 @@ def run_synthetic_experiment(
     dropped_test_ic = float(pred.loc[pred["pred_keep"] == 0, "test_ic"].mean())
     rule_kept_test_ic = float(pred.loc[pred["rule_keep"] == 1, "test_ic"].mean())
     rule_dropped_test_ic = float(pred.loc[pred["rule_keep"] == 0, "test_ic"].mean())
+    kept_strategy_sharpe = float(pred.loc[pred["pred_keep"] == 1, "test_strategy_sharpe"].mean())
+    dropped_strategy_sharpe = float(pred.loc[pred["pred_keep"] == 0, "test_strategy_sharpe"].mean())
+    rule_kept_strategy_sharpe = float(pred.loc[pred["rule_keep"] == 1, "test_strategy_sharpe"].mean())
+    rule_dropped_strategy_sharpe = float(pred.loc[pred["rule_keep"] == 0, "test_strategy_sharpe"].mean())
     summary = {
         "keep_accuracy": keep_acc,
         "regime_accuracy": regime_acc,
@@ -198,6 +267,10 @@ def run_synthetic_experiment(
         "mean_test_ic_dropped": dropped_test_ic,
         "rule_mean_test_ic_kept": rule_kept_test_ic,
         "rule_mean_test_ic_dropped": rule_dropped_test_ic,
+        "mean_test_strategy_sharpe_kept": kept_strategy_sharpe,
+        "mean_test_strategy_sharpe_dropped": dropped_strategy_sharpe,
+        "rule_mean_test_strategy_sharpe_kept": rule_kept_strategy_sharpe,
+        "rule_mean_test_strategy_sharpe_dropped": rule_dropped_strategy_sharpe,
         "n_test_samples": float(len(pred)),
     }
     if output_dir is not None:
@@ -222,10 +295,15 @@ def run_synthetic_experiment(
             "confidence",
             "rule_confidence",
             "test_ic",
+            "test_strategy_mean_return",
+            "test_strategy_sharpe",
+            "test_strategy_cum_return",
+            "test_strategy_max_drawdown",
         ]].copy()
         comparison.to_csv(out / "synthetic_comparison.csv", index=False)
         family_summary = summarize_family_scores(table)
         family_summary.to_csv(out / "synthetic_family_summary.csv", index=False)
+        summarize_family_ablation(table).to_csv(out / "synthetic_family_ablation.csv", index=False)
         (out / "synthetic_reasoning_view.json").write_text(
             json.dumps(build_reasoning_view(table), indent=2, sort_keys=True),
             encoding="utf-8",
@@ -254,6 +332,14 @@ def run_real_market_experiment(
                     "family": family,
                     "train_ic": ev.train_ic,
                     "test_ic": ev.test_ic,
+                    "train_strategy_mean_return": ev.strategy_mean_return,
+                    "train_strategy_sharpe": ev.strategy_sharpe,
+                    "train_strategy_cum_return": ev.strategy_cum_return,
+                    "train_strategy_max_drawdown": ev.strategy_max_drawdown,
+                    "test_strategy_mean_return": ev.test_strategy_mean_return,
+                    "test_strategy_sharpe": ev.test_strategy_sharpe,
+                    "test_strategy_cum_return": ev.test_strategy_cum_return,
+                    "test_strategy_max_drawdown": ev.test_strategy_max_drawdown,
                     "score": pred["confidence"],
                     "decision": pred["decision"],
                     "active_regime": pred["active_regime"],
@@ -267,6 +353,10 @@ def run_real_market_experiment(
         "avg_train_ic": float(table["train_ic"].mean()),
         "avg_test_ic": float(table["test_ic"].mean()),
         "avg_test_ic_kept": float(table.loc[table["decision"] == "keep", "test_ic"].mean()),
+        "avg_test_strategy_return": float(table["test_strategy_mean_return"].mean()),
+        "avg_test_strategy_sharpe": float(table["test_strategy_sharpe"].mean()),
+        "avg_test_strategy_sharpe_kept": float(table.loc[table["decision"] == "keep", "test_strategy_sharpe"].mean()),
+        "avg_test_strategy_sharpe_dropped": float(table.loc[table["decision"] == "drop", "test_strategy_sharpe"].mean()),
         "keep_rate": float((table["decision"] == "keep").mean()),
     }
     if output_dir is not None:
@@ -274,6 +364,7 @@ def run_real_market_experiment(
         out.mkdir(parents=True, exist_ok=True)
         table.assign(evidence_json=table["evidence"].map(lambda e: e.to_json())).drop(columns=["evidence"]).to_csv(out / "real_market_factor_table.csv", index=False)
         summarize_family_scores(table).to_csv(out / "real_market_family_summary.csv", index=False)
+        summarize_family_ablation(table).to_csv(out / "real_market_family_ablation.csv", index=False)
         (out / "real_market_reasoning_view.json").write_text(
             json.dumps(build_reasoning_view(table), indent=2, sort_keys=True),
             encoding="utf-8",

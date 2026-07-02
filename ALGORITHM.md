@@ -14,17 +14,10 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
 
 1. Load each asset time series.
 2. Build candidate factors:
-   - `momentum_20d`
-   - `reversal_5d`
-   - `volume_surge`
-   - `range_pct`
-   - `close_to_open`
-   - `noise_factor` for synthetic data only
-3. Expand the factor pool:
-   - `alpha158` bank: Qlib-style core templates over returns, moving averages, volatility, range, volume, gap, and intraday behavior
-   - `alpha360` bank: alpha158 plus AlphaBench-style expansions with lags, z-scores, spreads, ranks, min-max normalization, and interactions
+   - `alpha158` bank: Qlib-style core templates over returns, momentum, moving-average deviation, volatility, volume ratios, range, gap, intraday behavior, and candlestick geometry
+   - `alpha360` bank: alpha158 plus AlphaBench-style expansions with lags, z-scores, rolling ranks, min-max normalization, spreads, and interactions
    - each factor carries a `family` field for downstream ablation and agent reasoning
-4. Extract structured evidence for each factor:
+3. Extract structured evidence for each factor:
    - `IC`
    - `ICIR`
    - `win rate`
@@ -32,23 +25,31 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - regime IC under high-vol and low-vol slices
    - regime contrast
    - train/test IC split
-5. Judge the factor:
+   - directional long-short proxy return
+   - strategy Sharpe
+   - cumulative return
+   - max drawdown
+   - The strategy return is a horizon-adjusted daily proxy: `sign(oriented factor signal) * clipped future return / horizon`.
+4. Judge the factor:
    - `rule_based_judge` provides a deterministic baseline.
    - `LinearEvidenceJudge` learns a lightweight scorer from synthetic labels.
-6. Build an agent reasoning view:
+   - Both judges only consume in-sample structured evidence.
+5. Build an agent reasoning view:
    - family-level summaries rank the most promising factor families
    - top factor candidates provide concrete evidence for agentic reasoning
    - the `sear reason` command emits this view as JSON for a downstream LLM agent
-7. Evaluate:
-   - synthetic: keep accuracy, regime accuracy, mean test IC of kept vs dropped factors
-   - real market: average train/test IC, keep rate, and ranked factor outputs
+6. Evaluate:
+   - synthetic: keep accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
+   - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown
 
 ## Outputs
 
 - `synthetic_factor_table.csv`
 - `synthetic_predictions.csv`
 - `synthetic_summary.json`
+- `synthetic_family_ablation.csv`
 - `real_market_factor_table.csv`
+- `real_market_family_ablation.csv`
 - `real_market_summary.json`
 
 ## Command Line
@@ -63,4 +64,9 @@ sear reason --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --t
 
 - If synthetic keep accuracy is high, the judge can recover known factor validity.
 - If regime accuracy is high, the judge can infer the active market regime.
-- On real data, the benchmark checks whether the scoring pipeline produces stable factor rankings and sensible train/test IC separation.
+- If kept factors have higher out-of-sample strategy Sharpe than dropped factors, the reasoning layer is selecting economically useful candidates.
+- On real data, the benchmark checks whether the scoring pipeline produces stable factor rankings, sensible train/test IC separation, and family-level return evidence.
+
+## Current Limitation
+
+The current implementation is an offline benchmark, not reinforcement learning. It does not yet feed realized classification or trading reward back into factor generation. The next research step is to let an agent propose keep/drop/regime hypotheses from `sear reason`, then score those hypotheses on the held-out benchmark and iterate under a strict no-raw-price-access protocol.

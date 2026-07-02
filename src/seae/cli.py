@@ -39,13 +39,15 @@ def main() -> None:
             "confidence",
             "rule_confidence",
             "test_ic",
+            "test_strategy_sharpe",
+            "test_strategy_cum_return",
         ]
         print(pred[cols].head().to_string(index=False))
         print(summary)
         print("judge_weights=", judge.weights.tolist(), "bias=", judge.bias)
     elif args.cmd == "real":
         table, summary, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=args.output_dir)
-        print(table[["symbol", "factor_name", "train_ic", "test_ic", "score", "decision", "active_regime"]].head().to_string(index=False))
+        print(table[["symbol", "factor_name", "family", "train_ic", "test_ic", "test_strategy_sharpe", "score", "decision", "active_regime"]].head().to_string(index=False))
         print(summary)
     elif args.cmd == "reason":
         table, _, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=None)

@@ -27,6 +27,9 @@ def evidence_to_features(evidence: FactorEvidence) -> np.ndarray:
             np.tanh(_clean(evidence.regime_contrast) * 5.0),
             np.tanh(abs(_clean(evidence.regime_ic_high_vol)) * 20.0),
             np.tanh(abs(_clean(evidence.regime_ic_low_vol)) * 20.0),
+            np.tanh(_clean(evidence.strategy_sharpe) / 3.0),
+            np.tanh(_clean(evidence.strategy_cum_return)),
+            min(0.0, _clean(evidence.strategy_max_drawdown)),
         ],
         dtype=float,
     )
@@ -78,7 +81,16 @@ class LinearEvidenceJudge:
 
 
 def rule_based_judge(evidence: FactorEvidence, *, min_ic: float = 0.02, min_win_rate: float = 0.52) -> dict[str, object]:
-    score = 0.45 * abs(evidence.ic) + 0.25 * min(1.0, abs(evidence.ic_ir) / 5.0 if not math.isnan(evidence.ic_ir) else 0.0) + 0.2 * evidence.stability + 0.1 * min(1.0, evidence.regime_contrast * 5.0 if not math.isnan(evidence.regime_contrast) else 0.0)
+    strategy_score = max(0.0, min(1.0, evidence.strategy_sharpe / 3.0)) if not math.isnan(evidence.strategy_sharpe) else 0.0
+    drawdown_penalty = min(0.2, abs(evidence.strategy_max_drawdown)) if not math.isnan(evidence.strategy_max_drawdown) else 0.0
+    score = (
+        0.35 * abs(evidence.ic)
+        + 0.20 * min(1.0, abs(evidence.ic_ir) / 5.0 if not math.isnan(evidence.ic_ir) else 0.0)
+        + 0.15 * evidence.stability
+        + 0.10 * min(1.0, evidence.regime_contrast * 5.0 if not math.isnan(evidence.regime_contrast) else 0.0)
+        + 0.25 * strategy_score
+        - 0.10 * drawdown_penalty
+    )
     active_regime = "high_vol" if abs(evidence.regime_ic_high_vol) > abs(evidence.regime_ic_low_vol) else "low_vol"
     keep = (
         not math.isnan(evidence.ic)
@@ -91,7 +103,7 @@ def rule_based_judge(evidence: FactorEvidence, *, min_ic: float = 0.02, min_win_
         "decision": "keep" if keep else "drop",
         "active_regime": active_regime,
         "confidence": float(min(1.0, max(0.0, score))),
-        "rationale": "thresholded heuristic over structured evidence",
+        "rationale": "thresholded heuristic over IC, stability, regime contrast and in-sample strategy evidence",
     }
 
 
@@ -99,4 +111,3 @@ def fit_judge_from_rows(rows: pd.DataFrame, label_col: str = "label_keep") -> Li
     X = np.vstack(rows["evidence"].map(evidence_to_features).to_list())
     y = rows[label_col].to_numpy(dtype=float)
     return LinearEvidenceJudge.fit(X, y)
-
