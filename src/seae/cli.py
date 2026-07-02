@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 
-from .experiments import run_real_market_experiment, run_synthetic_experiment
+from .experiments import build_reasoning_view, run_real_market_experiment, run_synthetic_experiment
 from .synthetic import SyntheticConfig
 
 
@@ -18,6 +19,10 @@ def main() -> None:
     p_real.add_argument("--zip-path", required=True)
     p_real.add_argument("--limit", type=int, default=10)
     p_real.add_argument("--output-dir", default="outputs")
+    p_reason = sub.add_parser("reason")
+    p_reason.add_argument("--zip-path", required=True)
+    p_reason.add_argument("--limit", type=int, default=10)
+    p_reason.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args()
     if args.cmd == "synthetic":
         config = SyntheticConfig(n_assets=args.n_assets, n_days=args.n_days, seed=args.seed)
@@ -42,6 +47,10 @@ def main() -> None:
         table, summary, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=args.output_dir)
         print(table[["symbol", "factor_name", "train_ic", "test_ic", "score", "decision", "active_regime"]].head().to_string(index=False))
         print(summary)
+    elif args.cmd == "reason":
+        table, _, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=None)
+        view = build_reasoning_view(table, top_k=args.top_k)
+        print(json.dumps(view, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

@@ -5,57 +5,58 @@ import json
 
 import pandas as pd
 
-from .benchmark import make_candidate_factor_sets
 from .data import load_zip_archive
+from .evidence import FactorEvidence
 from .evidence import split_time_evidence
-from .factors import add_basic_factors
+from .factors import add_basic_features, factor_series_map
 from .judge import LinearEvidenceJudge, fit_judge_from_rows, rule_based_judge
 from .synthetic import SyntheticConfig, generate_synthetic_benchmark
 
 
-def _labels_for_synthetic_factor(factor_name: str) -> dict[str, object]:
-    low_vol_keep = {
-        "momentum_20d",
-        "momentum_60d",
-        "ret_1d",
-        "ret_5d",
-        "ret_10d",
-        "ret_20d",
-        "ret_60d",
-        "price_to_ma_20",
-        "price_to_ma_60",
+def _labels_for_synthetic_factor(family: str, factor_name: str) -> dict[str, object]:
+    truth = {
+        "momentum": {"label_keep": 1, "active_regime": "low_vol"},
+        "return": {"label_keep": 1, "active_regime": "low_vol"},
+        "mean_reversion": {"label_keep": 1, "active_regime": "low_vol"},
+        "volume": {"label_keep": 1, "active_regime": "high_vol"},
+        "volatility": {"label_keep": 0, "active_regime": "none"},
+        "range": {"label_keep": 0, "active_regime": "none"},
+        "gap": {"label_keep": 0, "active_regime": "none"},
+        "intraday": {"label_keep": 0, "active_regime": "none"},
+        "normalization": {"label_keep": 1, "active_regime": "low_vol"},
+        "rank": {"label_keep": 0, "active_regime": "none"},
+        "momentum_zscore": {"label_keep": 1, "active_regime": "low_vol"},
+        "momentum_lag": {"label_keep": 1, "active_regime": "low_vol"},
+        "return_zscore": {"label_keep": 1, "active_regime": "low_vol"},
+        "return_lag": {"label_keep": 1, "active_regime": "low_vol"},
+        "volume_zscore": {"label_keep": 1, "active_regime": "high_vol"},
+        "volume_lag": {"label_keep": 1, "active_regime": "high_vol"},
+        "volatility_zscore": {"label_keep": 0, "active_regime": "none"},
+        "volatility_lag": {"label_keep": 0, "active_regime": "none"},
+        "mean_reversion_zscore": {"label_keep": 1, "active_regime": "low_vol"},
+        "mean_reversion_lag": {"label_keep": 1, "active_regime": "low_vol"},
+        "range_zscore": {"label_keep": 0, "active_regime": "none"},
+        "range_lag": {"label_keep": 0, "active_regime": "none"},
+        "gap_zscore": {"label_keep": 0, "active_regime": "none"},
+        "gap_lag": {"label_keep": 0, "active_regime": "none"},
+        "intraday_zscore": {"label_keep": 0, "active_regime": "none"},
+        "intraday_lag": {"label_keep": 0, "active_regime": "none"},
+        "spread": {"label_keep": 1, "active_regime": "low_vol"},
+        "interaction": {"label_keep": 1, "active_regime": "high_vol"},
     }
-    high_vol_keep = {
-        "reversal_5d",
-        "reversal_10d",
-        "volume_surge",
-        "volume_ma_ratio_20",
-        "volume_ma_ratio_60",
-    }
-    neutral_drop = {
-        "range_pct",
-        "hl_spread",
-        "close_to_open",
-        "gap_return",
-        "vol_20d",
-        "vol_60d",
-        "intraday_reversal",
-        "noise_factor",
-    }
-    if factor_name in low_vol_keep:
-        return {"label_keep": 1, "active_regime": "low_vol"}
-    if factor_name in high_vol_keep:
+    if family in truth:
+        return truth[family]
+    if "volume" in family:
         return {"label_keep": 1, "active_regime": "high_vol"}
-    if factor_name in neutral_drop:
-        return {"label_keep": 0, "active_regime": "none"}
+    if "momentum" in family or "return" in family or "mean_reversion" in family:
+        return {"label_keep": 1, "active_regime": "low_vol"}
     return {"label_keep": 0, "active_regime": "none"}
 
 
-def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, pd.Series]:
-    df = add_basic_factors(df)
-    factors = make_candidate_factor_sets(df)
+def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, tuple[str, pd.Series]]:
+    factors = factor_series_map(df, bank="alpha360" if synthetic else "alpha158")
     if synthetic:
-        factors["noise_factor"] = df["noise_factor"]
+        factors["noise_factor"] = ("noise", df["noise_factor"])
     return factors
 
 
@@ -68,19 +69,73 @@ def _factor_rows(
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     factors = _factor_library(df, synthetic=synthetic)
-    for factor_name, series in factors.items():
+    for factor_name, value in factors.items():
+        family, series = value
         ev = split_time_evidence(df, series, symbol=symbol, factor_name=factor_name, horizon=horizon)
         row = {
             "symbol": symbol,
             "factor_name": factor_name,
+            "family": family,
             "evidence": ev,
             "train_ic": ev.train_ic,
             "test_ic": ev.test_ic,
         }
         if synthetic:
-            row.update(_labels_for_synthetic_factor(factor_name))
+            row.update(_labels_for_synthetic_factor(family, factor_name))
         rows.append(row)
     return rows
+
+
+def summarize_family_scores(table: pd.DataFrame) -> pd.DataFrame:
+    agg_dict = {
+        "mean_train_ic": ("train_ic", "mean"),
+        "mean_test_ic": ("test_ic", "mean"),
+        "n_obs": ("factor_name", "count"),
+    }
+    if "label_keep" in table.columns:
+        agg_dict["keep_rate"] = ("label_keep", "mean")
+    elif "decision" in table.columns:
+        keep_flag = (table["decision"] == "keep").astype(float)
+        table = table.assign(_keep_flag=keep_flag)
+        agg_dict["keep_rate"] = ("_keep_flag", "mean")
+    agg = (
+        table.groupby(["family", "factor_name"], as_index=False)
+        .agg(**agg_dict)
+        .sort_values(["family", "mean_test_ic"], ascending=[True, False])
+        .reset_index(drop=True)
+    )
+    return agg
+
+
+def build_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, object]:
+    family_agg = {
+        "mean_train_ic": ("train_ic", "mean"),
+        "mean_test_ic": ("test_ic", "mean"),
+        "factor_count": ("factor_name", "count"),
+    }
+    if "label_keep" in table.columns:
+        family_agg["keep_rate"] = ("label_keep", "mean")
+    elif "decision" in table.columns:
+        keep_flag = (table["decision"] == "keep").astype(float)
+        table = table.assign(_keep_flag=keep_flag)
+        family_agg["keep_rate"] = ("_keep_flag", "mean")
+
+    family_summary = (
+        table.groupby("family", as_index=False)
+        .agg(**family_agg)
+        .sort_values("mean_test_ic", ascending=False)
+        .head(top_k)
+    )
+    top_cols = ["symbol", "family", "factor_name", "train_ic", "test_ic"]
+    if "label_keep" in table.columns:
+        top_cols.append("label_keep")
+    if "decision" in table.columns:
+        top_cols.append("decision")
+    top_factors = table.sort_values("test_ic", ascending=False).loc[:, top_cols].head(top_k * 3)
+    return {
+        "family_summary": family_summary.to_dict(orient="records"),
+        "top_factors": top_factors.to_dict(orient="records"),
+    }
 
 
 def build_synthetic_dataset(config: SyntheticConfig | None = None) -> pd.DataFrame:
@@ -113,6 +168,7 @@ def run_synthetic_experiment(
             {
                 "symbol": row["symbol"],
                 "factor_name": row["factor_name"],
+                "family": row["family"],
                 "label_keep": int(row["label_keep"]),
                 "label_regime": row["active_regime"],
                 "pred_keep": 1 if pred["decision"] == "keep" else 0,
@@ -147,14 +203,16 @@ def run_synthetic_experiment(
     if output_dir is not None:
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
-        table.assign(
+        table_with_evidence = table.assign(
             evidence_json=table["evidence"].map(lambda e: e.to_json()),
-        ).drop(columns=["evidence"]).to_csv(out / "synthetic_factor_table.csv", index=False)
+        ).drop(columns=["evidence"])
+        table_with_evidence.to_csv(out / "synthetic_factor_table.csv", index=False)
         pred.to_csv(out / "synthetic_predictions.csv", index=False)
         (out / "synthetic_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
         comparison = pred[[
             "symbol",
             "factor_name",
+            "family",
             "label_keep",
             "label_regime",
             "pred_keep",
@@ -166,6 +224,12 @@ def run_synthetic_experiment(
             "test_ic",
         ]].copy()
         comparison.to_csv(out / "synthetic_comparison.csv", index=False)
+        family_summary = summarize_family_scores(table)
+        family_summary.to_csv(out / "synthetic_family_summary.csv", index=False)
+        (out / "synthetic_reasoning_view.json").write_text(
+            json.dumps(build_reasoning_view(table), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
     return pred, summary, judge
 
 
@@ -179,13 +243,15 @@ def run_real_market_experiment(
     rows: list[dict[str, object]] = []
     for eq in equities:
         factors = _factor_library(eq.frame, synthetic=False)
-        for factor_name, series in factors.items():
+        for factor_name, value in factors.items():
+            family, series = value
             ev = split_time_evidence(eq.frame, series, symbol=eq.symbol, factor_name=factor_name)
             pred = rule_based_judge(ev)
             rows.append(
                 {
                     "symbol": eq.symbol,
                     "factor_name": factor_name,
+                    "family": family,
                     "train_ic": ev.train_ic,
                     "test_ic": ev.test_ic,
                     "score": pred["confidence"],
@@ -207,5 +273,10 @@ def run_real_market_experiment(
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
         table.assign(evidence_json=table["evidence"].map(lambda e: e.to_json())).drop(columns=["evidence"]).to_csv(out / "real_market_factor_table.csv", index=False)
+        summarize_family_scores(table).to_csv(out / "real_market_family_summary.csv", index=False)
+        (out / "real_market_reasoning_view.json").write_text(
+            json.dumps(build_reasoning_view(table), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
         (out / "real_market_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     return table, summary, pd.DataFrame(equities)
