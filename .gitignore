@@ -7,4 +7,4 @@ build/
 work/*.csv
 work/*.parquet
 work/*.json
-
+outputs/
