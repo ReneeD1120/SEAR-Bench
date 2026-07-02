@@ -24,10 +24,17 @@ sear reason --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 2 --to
 sear llm --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B --dry-run
 ```
 
+For Hugging Face local models:
+
+```bash
+pip install -e ".[hf]"
+sear llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B
+```
+
 ## Current Design Boundary
 
 The LLM/agent layer is not allowed to generate hidden labels or inspect raw prices directly. It should only read the structured evidence view emitted by `sear reason`, then make a keep/drop and regime explanation. Final judgment still lands on benchmark metrics computed by code.
 
 ## Qwen Reasoning
 
-`sear llm` is the first real LLM reasoning entry point. It supports any OpenAI-compatible chat endpoint, so Qwen can be served locally by vLLM, llama.cpp server, or another compatible runtime. The command writes the prompt, calls the model unless `--dry-run` is set, parses strict JSON decisions, and evaluates the model's keep/drop choices against held-out benchmark metrics.
+`sear llm` is the first real LLM reasoning entry point. It supports both OpenAI-compatible chat endpoints and Hugging Face local `transformers` models, so Qwen can be called either through a server or directly from the Hugging Face model hub/local checkpoint. The command writes the prompt, calls the model unless `--dry-run` is set, parses strict JSON decisions, and evaluates the model's keep/drop choices against held-out benchmark metrics.

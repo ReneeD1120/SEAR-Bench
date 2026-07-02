@@ -13,6 +13,13 @@ dependencies = [
   "pandas>=2.2",
 ]
 
+[project.optional-dependencies]
+hf = [
+  "accelerate>=0.34",
+  "torch>=2.3",
+  "transformers>=4.51",
+]
+
 [project.scripts]
 sear = "seae.cli:main"
 seae = "seae.cli:main"

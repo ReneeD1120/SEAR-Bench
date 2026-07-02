@@ -40,6 +40,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - the `sear reason` command emits this view as JSON for a downstream LLM agent
 6. Run LLM reasoning:
    - `sear llm` sends the structured evidence view to an OpenAI-compatible chat endpoint.
+   - `sear llm --backend hf-local` can also call a Hugging Face `transformers` model directly.
    - Qwen is the first open-source target model.
    - The LLM must return strict JSON keep/drop, active regime, confidence, and rationale fields.
    - The LLM still cannot inspect raw prices or hidden labels.
@@ -65,6 +66,7 @@ sear synthetic --output-dir outputs
 sear real --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --output-dir outputs
 sear reason --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --top-k 5
 sear llm --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B --dry-run
+sear llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B
 ```
 
 ## Interpretation

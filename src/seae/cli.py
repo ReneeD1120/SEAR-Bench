@@ -7,6 +7,7 @@ from pathlib import Path
 from .experiments import build_reasoning_view, run_real_market_experiment, run_synthetic_experiment
 from .llm_judge import (
     build_llm_messages,
+    call_huggingface_local_chat,
     call_openai_compatible_chat,
     config_from_env,
     evaluate_llm_decisions,
@@ -37,10 +38,15 @@ def main() -> None:
     p_llm.add_argument("--zip-path", required=True)
     p_llm.add_argument("--limit", type=int, default=10)
     p_llm.add_argument("--top-k", type=int, default=5)
+    p_llm.add_argument("--backend", choices=["openai-compatible", "hf-local"], default="openai-compatible")
     p_llm.add_argument("--model", default="Qwen/Qwen3-8B")
     p_llm.add_argument("--base-url", default=None)
     p_llm.add_argument("--temperature", type=float, default=0.0)
     p_llm.add_argument("--timeout", type=int, default=120)
+    p_llm.add_argument("--max-new-tokens", type=int, default=2048)
+    p_llm.add_argument("--hf-device-map", default=None)
+    p_llm.add_argument("--hf-torch-dtype", default="auto")
+    p_llm.add_argument("--trust-remote-code", action="store_true")
     p_llm.add_argument("--prompt-out", default="outputs/llm_prompt.json")
     p_llm.add_argument("--response-out", default="outputs/llm_response.json")
     p_llm.add_argument("--decisions-out", default="outputs/llm_decisions.csv")
@@ -91,8 +97,20 @@ def main() -> None:
             base_url=args.base_url,
             temperature=args.temperature,
             timeout=args.timeout,
+            max_new_tokens=args.max_new_tokens,
         )
-        raw = call_openai_compatible_chat(messages, config)
+        if args.backend == "openai-compatible":
+            raw = call_openai_compatible_chat(messages, config)
+        else:
+            raw = call_huggingface_local_chat(
+                messages,
+                model=args.model,
+                temperature=args.temperature,
+                max_new_tokens=args.max_new_tokens,
+                device_map=args.hf_device_map,
+                torch_dtype=args.hf_torch_dtype,
+                trust_remote_code=args.trust_remote_code,
+            )
         response = parse_llm_json(raw)
         response_out = Path(args.response_out)
         response_out.parent.mkdir(parents=True, exist_ok=True)

@@ -63,6 +63,7 @@ class LLMConfig:
     api_key: str | None = None
     temperature: float = 0.0
     timeout: int = 120
+    max_new_tokens: int = 2048
 
 
 def _finite_json_value(value: object) -> object:
@@ -109,6 +110,54 @@ def call_openai_compatible_chat(messages: list[dict[str, str]], config: LLMConfi
         raise RuntimeError(f"LLM endpoint returned HTTP {exc.code}: {detail}") from exc
     data = json.loads(raw)
     return str(data["choices"][0]["message"]["content"])
+
+
+def call_huggingface_local_chat(
+    messages: list[dict[str, str]],
+    *,
+    model: str,
+    temperature: float = 0.0,
+    max_new_tokens: int = 2048,
+    device_map: str | None = None,
+    torch_dtype: str = "auto",
+    trust_remote_code: bool = False,
+) -> str:
+    try:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+    except ImportError as exc:
+        raise RuntimeError(
+            "Hugging Face local backend requires transformers. "
+            "Install optional dependencies, for example: pip install transformers torch accelerate"
+        ) from exc
+
+    tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=trust_remote_code)
+    model_kwargs: dict[str, object] = {
+        "torch_dtype": torch_dtype,
+        "trust_remote_code": trust_remote_code,
+    }
+    if device_map:
+        model_kwargs["device_map"] = device_map
+    hf_model = AutoModelForCausalLM.from_pretrained(model, **model_kwargs)
+    if hasattr(tokenizer, "apply_chat_template"):
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    else:
+        prompt = "\n\n".join(f"{m['role'].upper()}:\n{m['content']}" for m in messages) + "\n\nASSISTANT:\n"
+    inputs = tokenizer(prompt, return_tensors="pt")
+    if not device_map:
+        try:
+            inputs = inputs.to(hf_model.device)
+        except AttributeError:
+            pass
+    generate_kwargs: dict[str, object] = {
+        "max_new_tokens": max_new_tokens,
+        "do_sample": temperature > 0.0,
+        "pad_token_id": tokenizer.eos_token_id,
+    }
+    if temperature > 0.0:
+        generate_kwargs["temperature"] = temperature
+    output = hf_model.generate(**inputs, **generate_kwargs)
+    generated = output[0][inputs["input_ids"].shape[-1] :]
+    return str(tokenizer.decode(generated, skip_special_tokens=True))
 
 
 def parse_llm_json(content: str) -> dict[str, object]:
@@ -174,7 +223,7 @@ def evaluate_llm_decisions(table: pd.DataFrame, decisions: pd.DataFrame) -> tupl
         "test_strategy_cum_return",
         "test_strategy_max_drawdown",
     ]
-    optional_cols = [c for c in ["decision", "active_regime", "label_keep", "active_regime"] if c in table.columns]
+    optional_cols = [c for c in ["decision", "active_regime", "label_keep"] if c in table.columns]
     merged = decisions.merge(table[metric_cols + optional_cols], on=["symbol", "factor_name"], how="left")
     keep = merged["llm_decision"] == "keep"
     summary = {
@@ -200,6 +249,7 @@ def config_from_env(
     api_key_env: str = "QWEN_API_KEY",
     temperature: float = 0.0,
     timeout: int = 120,
+    max_new_tokens: int = 2048,
 ) -> LLMConfig:
     resolved_base_url = base_url or os.environ.get("QWEN_BASE_URL") or os.environ.get("OPENAI_BASE_URL") or "http://localhost:8000/v1"
     api_key = os.environ.get(api_key_env) or os.environ.get("OPENAI_API_KEY")
@@ -209,4 +259,5 @@ def config_from_env(
         api_key=api_key,
         temperature=temperature,
         timeout=timeout,
+        max_new_tokens=max_new_tokens,
     )

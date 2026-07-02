@@ -98,11 +98,20 @@ Comparison with unadjusted data:
 
 - The expanded factor pool is large enough to support downstream agentic reasoning experiments.
 - `sear llm` now provides the first real LLM reasoning interface.
-- Qwen is the first open-source target model through an OpenAI-compatible chat endpoint.
+- Qwen is the first open-source target model.
+- Supported Qwen paths:
+  - OpenAI-compatible endpoint, for vLLM/llama.cpp server/hosted compatible APIs.
+  - Hugging Face local `transformers` backend via `sear llm --backend hf-local`.
 - Dry-run command tested:
 
 ```bash
 PYTHONPATH=src python -m seae.cli llm --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B --prompt-out outputs/qwen_prompt_smoke.json --dry-run
+```
+
+- Hugging Face dry-run syntax tested:
+
+```bash
+PYTHONPATH=src python -m seae.cli llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 2 --top-k 2 --model Qwen/Qwen3-8B --prompt-out outputs/qwen_prompt_verify.json --dry-run
 ```
 
 - The current code is an offline benchmark, not reinforcement learning.
