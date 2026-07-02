@@ -66,6 +66,34 @@ Interpretation:
 - Mean reversion and momentum-style families dominate the real-data family ablation under the strategy proxy.
 - Because the data are unadjusted, the real-market numbers should be treated as a pipeline validation rather than final finance evidence.
 
+## Forward-Adjusted Real Market Benchmark
+
+Command:
+
+```bash
+PYTHONPATH=src python -m seae.cli real --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 20 --output-dir outputs/experiment_real_qfq_limit20
+```
+
+Setup:
+
+- Same first 20 files and same 276-factor pool as the unadjusted benchmark.
+- Forward-adjusted OHLCV data reduce corporate-action artifacts relative to unadjusted prices.
+
+Results:
+
+- Average train IC: `-0.0416`.
+- Average test IC: `-0.0569`.
+- Keep rate: `0.1219`.
+- Kept factor mean test Sharpe: `0.9248`.
+- Dropped factor mean test Sharpe: `0.3363`.
+
+Comparison with unadjusted data:
+
+- Kept Sharpe remains higher than dropped Sharpe, so the keep/drop pipeline still has economic signal under the adjusted-price version.
+- The absolute Sharpe is lower than the unadjusted run, which is expected because adjustment removes some artificial corporate-action jumps.
+- The kept average test IC remains negative, so the current real-data baseline still behaves more like a strategy-proxy selector than a positive-IC selector.
+- The first 20 symbols include non-common-stock-like tickers such as units or rights; a stronger paper experiment should add common-stock, liquidity, and minimum-history filters.
+
 ## Research Feedback
 
 - The expanded factor pool is large enough to support downstream agentic reasoning experiments.
