@@ -111,17 +111,31 @@ def main() -> None:
                 torch_dtype=args.hf_torch_dtype,
                 trust_remote_code=args.trust_remote_code,
             )
-        response = parse_llm_json(raw)
         response_out = Path(args.response_out)
         response_out.parent.mkdir(parents=True, exist_ok=True)
+        raw_out = response_out.with_suffix(response_out.suffix + ".raw.txt")
+        raw_out.write_text(raw, encoding="utf-8")
+        try:
+            response = parse_llm_json(raw)
+            parse_success = True
+        except json.JSONDecodeError as exc:
+            response = {
+                "model_role": "structured_evidence_reasoner",
+                "global_assessment": "parse_failed",
+                "parse_error": str(exc),
+                "decisions": [],
+            }
+            parse_success = False
         response_out.write_text(json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         decisions = normalize_llm_decisions(response)
-        scored, summary = evaluate_llm_decisions(table, decisions)
+        scored, summary = evaluate_llm_decisions(table, decisions, reasoning_view=view)
+        summary["parse_success"] = float(parse_success)
         decisions_out = Path(args.decisions_out)
         decisions_out.parent.mkdir(parents=True, exist_ok=True)
         scored.to_csv(decisions_out, index=False)
         print(f"prompt_written={prompt_out}")
         print(f"response_written={response_out}")
+        print(f"raw_response_written={raw_out}")
         print(f"decisions_written={decisions_out}")
         print(summary)
 

@@ -27,6 +27,10 @@ Decision protocol:
 - Prefer factors with consistent train evidence, stronger test strategy Sharpe, acceptable drawdown, and meaningful family-level support.
 - Be conservative when evidence conflicts.
 - Do not invent data or mention raw price patterns.
+- Make one decision for each provided top_factors candidate.
+- Copy candidate_id exactly from the provided top_factors list.
+- Also copy symbol, factor_name, and family exactly from the same candidate.
+- If you are unsure about a candidate, choose drop rather than inventing a new factor identity.
 
 Allowed regimes:
 - high_vol
@@ -38,8 +42,9 @@ Return JSON with this exact schema:
 {{
   "model_role": "structured_evidence_reasoner",
   "global_assessment": "...",
-  "decisions": [
+    "decisions": [
     {{
+      "candidate_id": "C000",
       "symbol": "...",
       "factor_name": "...",
       "family": "...",
@@ -191,6 +196,7 @@ def normalize_llm_decisions(response: dict[str, object]) -> pd.DataFrame:
             confidence = 0.0
         rows.append(
             {
+                "candidate_id": str(item.get("candidate_id", "")),
                 "symbol": str(item.get("symbol", "")),
                 "factor_name": str(item.get("factor_name", "")),
                 "family": str(item.get("family", "")),
@@ -203,7 +209,19 @@ def normalize_llm_decisions(response: dict[str, object]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def evaluate_llm_decisions(table: pd.DataFrame, decisions: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, float]]:
+def candidate_frame_from_view(reasoning_view: dict[str, object]) -> pd.DataFrame:
+    top_factors = reasoning_view.get("top_factors", [])
+    if not isinstance(top_factors, list):
+        return pd.DataFrame()
+    return pd.DataFrame(top_factors)
+
+
+def evaluate_llm_decisions(
+    table: pd.DataFrame,
+    decisions: pd.DataFrame,
+    *,
+    reasoning_view: dict[str, object] | None = None,
+) -> tuple[pd.DataFrame, dict[str, float]]:
     if decisions.empty:
         return decisions, {
             "n_decisions": 0.0,
@@ -224,7 +242,14 @@ def evaluate_llm_decisions(table: pd.DataFrame, decisions: pd.DataFrame) -> tupl
         "test_strategy_max_drawdown",
     ]
     optional_cols = [c for c in ["decision", "active_regime", "label_keep"] if c in table.columns]
-    merged = decisions.merge(table[metric_cols + optional_cols], on=["symbol", "factor_name"], how="left")
+    candidate_frame = candidate_frame_from_view(reasoning_view or {})
+    working = decisions.copy()
+    if "candidate_id" in working.columns and not candidate_frame.empty and "candidate_id" in candidate_frame.columns:
+        candidate_cols = ["candidate_id", "symbol", "factor_name", "family"]
+        candidate_map = candidate_frame.loc[:, candidate_cols].drop_duplicates("candidate_id")
+        working = working.drop(columns=[c for c in ["symbol", "factor_name", "family"] if c in working.columns])
+        working = working.merge(candidate_map, on="candidate_id", how="left")
+    merged = working.merge(table[metric_cols + ["family"] + optional_cols], on=["symbol", "factor_name", "family"], how="left")
     keep = merged["llm_decision"] == "keep"
     summary = {
         "n_decisions": float(len(merged)),

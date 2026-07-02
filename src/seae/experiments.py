@@ -191,7 +191,8 @@ def build_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, objec
         top_cols.append("label_keep")
     if "decision" in table.columns:
         top_cols.append("decision")
-    top_factors = table.sort_values(["test_strategy_sharpe", "test_ic"], ascending=False).loc[:, top_cols].head(top_k * 3)
+    top_factors = table.sort_values(["test_strategy_sharpe", "test_ic"], ascending=False).loc[:, top_cols].head(top_k * 3).copy()
+    top_factors.insert(0, "candidate_id", [f"C{i:03d}" for i in range(len(top_factors))])
     return {
         "decision_boundary": "LLM/agent should only read these structured fields; benchmark labels and returns are computed outside the LLM.",
         "family_summary": family_summary.to_dict(orient="records"),

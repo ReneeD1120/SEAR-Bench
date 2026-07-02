@@ -114,6 +114,15 @@ PYTHONPATH=src python -m seae.cli llm --zip-path /Users/renee/Downloads/RAFPO/�
 PYTHONPATH=src python -m seae.cli llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 2 --top-k 2 --model Qwen/Qwen3-8B --prompt-out outputs/qwen_prompt_verify.json --dry-run
 ```
 
+- Real Hugging Face smoke tested with `Qwen/Qwen2.5-0.5B-Instruct`:
+
+```bash
+HF_HOME=.cache/huggingface PYTHONPATH=src .venv-hf/bin/python -m seae.cli llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 1 --top-k 1 --model Qwen/Qwen2.5-0.5B-Instruct --max-new-tokens 512 --prompt-out outputs/qwen_hf_prompt_candidate2.json --response-out outputs/qwen_hf_response_candidate2.json --decisions-out outputs/qwen_hf_decisions_candidate2.csv
+```
+
+- Result: the local Qwen call completed, but `Qwen2.5-0.5B-Instruct` returned invalid JSON, so the benchmark correctly recorded `parse_success=0.0` and `n_decisions=0.0`.
+- Interpretation: the Hugging Face backend works, but the 0.5B model is too weak for reliable structured JSON reasoning. Next tests should use a stronger Qwen model or constrained JSON decoding.
+
 - The current code is an offline benchmark, not reinforcement learning.
 - The next step is to serve Qwen, let it consume only structured evidence, produce keep/drop/regime rationales, and evaluate those decisions on held-out benchmark metrics.
 - A later version should add portfolio-level backtesting with adjusted prices, transaction costs, and cross-sectional long-short construction.
