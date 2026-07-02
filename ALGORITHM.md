@@ -38,9 +38,15 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - family-level summaries rank the most promising factor families
    - top factor candidates provide concrete evidence for agentic reasoning
    - the `sear reason` command emits this view as JSON for a downstream LLM agent
-6. Evaluate:
+6. Run LLM reasoning:
+   - `sear llm` sends the structured evidence view to an OpenAI-compatible chat endpoint.
+   - Qwen is the first open-source target model.
+   - The LLM must return strict JSON keep/drop, active regime, confidence, and rationale fields.
+   - The LLM still cannot inspect raw prices or hidden labels.
+7. Evaluate:
    - synthetic: keep accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
    - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown
+   - LLM: kept vs dropped test IC/Sharpe, rule agreement, and synthetic label accuracy when labels exist
 
 ## Outputs
 
@@ -58,6 +64,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
 sear synthetic --output-dir outputs
 sear real --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --output-dir outputs
 sear reason --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --top-k 5
+sear llm --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B --dry-run
 ```
 
 ## Interpretation
@@ -69,4 +76,4 @@ sear reason --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --t
 
 ## Current Limitation
 
-The current implementation is an offline benchmark, not reinforcement learning. It does not yet feed realized classification or trading reward back into factor generation. The next research step is to let an agent propose keep/drop/regime hypotheses from `sear reason`, then score those hypotheses on the held-out benchmark and iterate under a strict no-raw-price-access protocol.
+The current implementation is an offline benchmark, not reinforcement learning. It does not yet feed realized classification or trading reward back into factor generation. The next research step is to run Qwen or another open-source LLM through `sear llm`, score its keep/drop/regime hypotheses on the held-out benchmark, and iterate under a strict no-raw-price-access protocol.

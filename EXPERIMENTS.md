@@ -97,6 +97,14 @@ Comparison with unadjusted data:
 ## Research Feedback
 
 - The expanded factor pool is large enough to support downstream agentic reasoning experiments.
+- `sear llm` now provides the first real LLM reasoning interface.
+- Qwen is the first open-source target model through an OpenAI-compatible chat endpoint.
+- Dry-run command tested:
+
+```bash
+PYTHONPATH=src python -m seae.cli llm --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B --prompt-out outputs/qwen_prompt_smoke.json --dry-run
+```
+
 - The current code is an offline benchmark, not reinforcement learning.
-- The next step is to let an LLM/agent consume only `sear reason` structured evidence, produce keep/drop/regime rationales, and evaluate those decisions on held-out benchmark metrics.
+- The next step is to serve Qwen, let it consume only structured evidence, produce keep/drop/regime rationales, and evaluate those decisions on held-out benchmark metrics.
 - A later version should add portfolio-level backtesting with adjusted prices, transaction costs, and cross-sectional long-short construction.
