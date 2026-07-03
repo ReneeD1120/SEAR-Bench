@@ -33,9 +33,10 @@ Decision protocol:
 - Copy candidate_id exactly from the provided top_factors list.
 - Also copy symbol, factor_name, and family exactly from the same candidate.
 - If you are unsure about a candidate, choose drop rather than inventing a new factor identity.
-- Keep global_assessment to one short sentence.
-- Keep each rationale to one short sentence under 18 words.
-- Do not restate more than two numeric metrics in any rationale.
+- Set global_assessment to exactly one of: mostly_positive, mixed, mostly_negative.
+- Keep each rationale as 1-3 semicolon-separated reason codes.
+- Allowed reason codes: strong_train_strategy, weak_train_strategy, ic_support, ic_conflict, stable, unstable, drawdown_risk, regime_contrast, sufficient_history, insufficient_history.
+- Do not write prose explanations or restate numeric metrics in rationale.
 - Return JSON only; do not include markdown fences, comments, or trailing text.
 
 Allowed regimes:
@@ -47,7 +48,7 @@ Allowed regimes:
 Return JSON with this exact schema:
 {{
   "model_role": "structured_evidence_reasoner",
-  "global_assessment": "...",
+  "global_assessment": "mixed",
     "decisions": [
     {{
       "candidate_id": "C000",
@@ -57,7 +58,7 @@ Return JSON with this exact schema:
       "decision": "keep/drop",
       "active_regime": "uncertain",
       "confidence": 0.0,
-      "rationale": "..."
+      "rationale": "ic_conflict; strong_train_strategy"
     }}
   ]
 }}
