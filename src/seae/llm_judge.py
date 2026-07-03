@@ -24,7 +24,7 @@ USER_PROMPT_TEMPLATE = """We are testing structured-evidence agentic reasoning f
 Decision protocol:
 - Use only the provided structured evidence.
 - A factor can be useful even if IC is negative, if the oriented strategy proxy is strong.
-- Prefer factors with consistent train evidence, stronger test strategy Sharpe, acceptable drawdown, and meaningful family-level support.
+- Prefer factors with consistent train evidence, stronger train strategy Sharpe, acceptable drawdown, sufficient train_n_obs, and meaningful family-level support.
 - Be conservative when evidence conflicts.
 - Do not invent data or mention raw price patterns.
 - Do not compare against risk-free rates, transaction costs, sectors, or any baseline that is not explicitly present in the structured evidence.
@@ -33,6 +33,10 @@ Decision protocol:
 - Copy candidate_id exactly from the provided top_factors list.
 - Also copy symbol, factor_name, and family exactly from the same candidate.
 - If you are unsure about a candidate, choose drop rather than inventing a new factor identity.
+- Keep global_assessment to one short sentence.
+- Keep each rationale to one short sentence under 18 words.
+- Do not restate more than two numeric metrics in any rationale.
+- Return JSON only; do not include markdown fences, comments, or trailing text.
 
 Allowed regimes:
 - high_vol
