@@ -184,3 +184,46 @@ Interpretation:
 - The current code is an offline benchmark, not reinforcement learning.
 - The next step is to serve Qwen, let it consume only structured evidence, produce keep/drop/regime rationales, and evaluate those decisions on held-out benchmark metrics.
 - A later version should add portfolio-level backtesting with adjusted prices, transaction costs, and cross-sectional long-short construction.
+
+## Formal No-Leak Qwen Runs
+
+Candidate selection fix:
+
+- The formal LLM view now filters candidates to at least `252` train observations.
+- Candidates are selected by train-only evidence and diversified across symbols/families.
+- Held-out metrics remain hidden from the LLM and are joined only after decisions are produced.
+- Evaluation summary now reports match and valid held-out strategy coverage.
+
+Compact rationale-code prompt:
+
+- Qwen 1.5B and 3B both parse successfully with compact reason codes.
+- With raw numeric fields only, both models were overly conservative and dropped all 15 candidates.
+- This was a useful negative result: small open-source Qwen models can produce valid JSON while still misreading structured numeric evidence.
+
+Tagged train-evidence prompt:
+
+- Added train-only `evidence_tags` for each candidate: `strategy_strength`, `ic_signal`, `history_quality`, `drawdown_risk`, and `regime_signal`.
+- These tags do not expose held-out test metrics; they summarize only in-sample benchmark evidence.
+
+Results on `qfq.zip`, `limit=5`, `top_k=5`, 15 candidates:
+
+| Model | View | Parse | Match | Valid Sharpe | Keep Rate | Kept Test Sharpe | Dropped Test Sharpe | Rule Agreement |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen2.5-1.5B | compact codes | 1.0 | 1.0 | 1.0 | 0.0000 | NaN | -0.1431 | 0.8667 |
+| Qwen2.5-3B | compact codes | 1.0 | 1.0 | 1.0 | 0.0000 | NaN | -0.1431 | 0.8667 |
+| Qwen2.5-1.5B | tagged evidence | 1.0 | 1.0 | 1.0 | 0.0000 | NaN | -0.1431 | 0.8667 |
+| Qwen2.5-3B | tagged evidence | 1.0 | 1.0 | 1.0 | 0.3333 | 0.0718 | -0.2506 | 0.6667 |
+
+Results on `qfq.zip`, `limit=10`, `top_k=5`, 15 candidates:
+
+| Model | View | Parse | Match | Valid Sharpe | Keep Rate | Kept Test Sharpe | Dropped Test Sharpe | Rule Agreement |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen2.5-3B | tagged evidence | 1.0 | 1.0 | 1.0 | 0.6000 | 0.0798 | 0.2549 | 0.4667 |
+
+Interpretation:
+
+- Tagged train evidence helps Qwen 3B move beyond the degenerate all-drop policy.
+- The `limit=5` tagged 3B run separates kept versus dropped candidates in the right direction on held-out strategy Sharpe.
+- The `limit=10` tagged 3B robustness run is less favorable: kept candidates underperform dropped candidates on held-out Sharpe.
+- Qwen 1.5B remains too weak for this reasoning task: it ignores tags and continues to mark strong train-strategy candidates as weak.
+- Explanation compliance should become an explicit benchmark metric because Qwen sometimes emits non-allowed reason codes such as `moderate_train_strategy` and can keep candidates while citing weak strategy evidence.
