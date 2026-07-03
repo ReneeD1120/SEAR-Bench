@@ -282,6 +282,57 @@ def _diversified_top_candidates(
     return out
 
 
+def _evidence_tags(row: pd.Series, ev: FactorEvidence) -> dict[str, str]:
+    """Discrete train-only evidence tags to make LLM reasoning less numerically brittle."""
+    sharpe = float(row["train_strategy_sharpe"]) if pd.notna(row["train_strategy_sharpe"]) else float("nan")
+    cum_return = float(row["train_strategy_cum_return"]) if pd.notna(row["train_strategy_cum_return"]) else float("nan")
+    drawdown = float(row["train_strategy_max_drawdown"]) if pd.notna(row["train_strategy_max_drawdown"]) else float("nan")
+    train_ic = float(row["train_ic"]) if pd.notna(row["train_ic"]) else float("nan")
+
+    if np.isfinite(sharpe) and np.isfinite(cum_return) and sharpe >= 2.0 and cum_return > 0:
+        strategy_strength = "strong"
+    elif np.isfinite(sharpe) and np.isfinite(cum_return) and sharpe >= 1.0 and cum_return > 0:
+        strategy_strength = "moderate"
+    else:
+        strategy_strength = "weak"
+
+    if np.isfinite(train_ic) and train_ic >= 0.02:
+        ic_signal = "supportive"
+    elif np.isfinite(train_ic) and train_ic <= -0.02:
+        ic_signal = "conflicting"
+    else:
+        ic_signal = "neutral"
+
+    if ev.n_obs >= 756:
+        history_quality = "long"
+    elif ev.n_obs >= 252:
+        history_quality = "sufficient"
+    else:
+        history_quality = "short"
+
+    if np.isfinite(drawdown) and drawdown <= -0.5:
+        drawdown_risk = "high"
+    elif np.isfinite(drawdown) and drawdown <= -0.25:
+        drawdown_risk = "moderate"
+    else:
+        drawdown_risk = "acceptable"
+
+    if np.isfinite(ev.regime_contrast) and ev.regime_contrast >= 0.15:
+        regime_signal = "strong"
+    elif np.isfinite(ev.regime_contrast) and ev.regime_contrast >= 0.05:
+        regime_signal = "moderate"
+    else:
+        regime_signal = "weak"
+
+    return {
+        "strategy_strength": strategy_strength,
+        "ic_signal": ic_signal,
+        "history_quality": history_quality,
+        "drawdown_risk": drawdown_risk,
+        "regime_signal": regime_signal,
+    }
+
+
 def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, object]:
     """Build a leakage-free view for LLM decisions.
 
@@ -334,6 +385,7 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, o
                 "train_strategy_sharpe": row["train_strategy_sharpe"],
                 "train_strategy_cum_return": row["train_strategy_cum_return"],
                 "train_strategy_max_drawdown": row["train_strategy_max_drawdown"],
+                "evidence_tags": _evidence_tags(row, ev),
             }
         )
     return {
