@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import io
 from pathlib import Path
-import tempfile
 import zipfile
 
 import pandas as pd
@@ -29,8 +29,7 @@ class EquityFrame:
     frame: pd.DataFrame
 
 
-def load_equity_csv(path: str | Path) -> pd.DataFrame:
-    df = pd.read_csv(path)
+def _normalize_equity_frame(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns=CHINESE_COLS)
     if "Unnamed: 0" in df.columns:
         df = df.drop(columns=["Unnamed: 0"])
@@ -39,6 +38,11 @@ def load_equity_csv(path: str | Path) -> pd.DataFrame:
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df.sort_values("date").reset_index(drop=True)
+
+
+def load_equity_csv(path: str | Path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    return _normalize_equity_frame(df)
 
 
 def load_zip_archive(zip_path: str | Path, limit: int | None = None) -> list[EquityFrame]:
@@ -50,10 +54,6 @@ def load_zip_archive(zip_path: str | Path, limit: int | None = None) -> list[Equ
             symbol = Path(name).stem
             with zf.open(name) as f:
                 raw = f.read()
-            with tempfile.NamedTemporaryFile(suffix=".csv", delete=True) as tmp:
-                tmp.write(raw)
-                tmp.flush()
-                frame = load_equity_csv(tmp.name)
+            frame = _normalize_equity_frame(pd.read_csv(io.BytesIO(raw)))
             out.append(EquityFrame(symbol=symbol, frame=frame))
     return out
-
