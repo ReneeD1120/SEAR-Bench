@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
+import numpy as np
 import pandas as pd
 
 from .data import load_zip_archive
@@ -204,6 +205,83 @@ def build_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, objec
     }
 
 
+def _diversified_top_candidates(
+    table: pd.DataFrame,
+    *,
+    candidate_count: int,
+    min_train_n_obs: int = 252,
+    max_per_symbol: int = 2,
+    max_per_family: int | None = None,
+) -> pd.DataFrame:
+    """Rank by train evidence while preventing one symbol/family from dominating."""
+    if table.empty:
+        return table.copy()
+
+    ranked = table.copy()
+    ranked["_abs_train_ic"] = ranked["train_ic"].abs()
+    ranked["_train_sharpe_rank"] = ranked["train_strategy_sharpe"].fillna(-999.0)
+    ranked["_train_n_obs"] = ranked["evidence"].map(lambda ev: getattr(ev, "n_obs", 0))
+    valid = ranked[
+        ranked["train_ic"].notna()
+        & ranked["train_strategy_sharpe"].notna()
+        & (ranked["_train_n_obs"] >= min_train_n_obs)
+    ].copy()
+    if valid.empty:
+        valid = ranked[
+            ranked["train_ic"].notna()
+            & ranked["train_strategy_sharpe"].notna()
+            & (ranked["_train_n_obs"] > 0)
+        ].copy()
+    if valid.empty:
+        valid = ranked
+    ranked = valid
+    ranked = ranked.sort_values(
+        ["_train_sharpe_rank", "_abs_train_ic", "_train_n_obs"],
+        ascending=False,
+    )
+
+    selected: list[int] = []
+    symbol_counts: dict[str, int] = {}
+    family_counts: dict[str, int] = {}
+    effective_symbol_cap = max(
+        max_per_symbol,
+        int(np.ceil(candidate_count / max(1, ranked["symbol"].nunique()))),
+    )
+    family_cap = max_per_family or max(2, int(np.ceil(candidate_count / max(1, ranked["family"].nunique()))))
+
+    for idx, row in ranked.iterrows():
+        symbol = str(row["symbol"])
+        family = str(row["family"])
+        if symbol_counts.get(symbol, 0) >= effective_symbol_cap:
+            continue
+        if family_counts.get(family, 0) >= family_cap:
+            continue
+        selected.append(idx)
+        symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+        family_counts[family] = family_counts.get(family, 0) + 1
+        if len(selected) >= candidate_count:
+            break
+
+    if len(selected) < candidate_count:
+        for idx, row in ranked.iterrows():
+            if idx in selected:
+                continue
+            symbol = str(row["symbol"])
+            if symbol_counts.get(symbol, 0) >= effective_symbol_cap:
+                continue
+            selected.append(idx)
+            symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+            if len(selected) >= candidate_count:
+                break
+
+    out = ranked.loc[selected].reset_index(drop=True)
+    out.attrs["effective_symbol_cap"] = effective_symbol_cap
+    out.attrs["candidate_count_requested"] = candidate_count
+    out.attrs["candidate_count_after_filter"] = len(ranked)
+    out.attrs["min_train_n_obs"] = min_train_n_obs
+    return out
+
+
 def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, object]:
     """Build a leakage-free view for LLM decisions.
 
@@ -212,11 +290,13 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, o
     """
     work = table.copy()
     work["_abs_train_ic"] = work["train_ic"].abs()
+    work["_train_n_obs"] = work["evidence"].map(lambda ev: getattr(ev, "n_obs", 0))
     family_summary = (
         work.groupby("family", as_index=False)
         .agg(
             mean_train_ic=("train_ic", "mean"),
             mean_abs_train_ic=("_abs_train_ic", "mean"),
+            mean_train_n_obs=("_train_n_obs", "mean"),
             mean_train_strategy_return=("train_strategy_mean_return", "mean"),
             mean_train_strategy_sharpe=("train_strategy_sharpe", "mean"),
             mean_train_strategy_cum_return=("train_strategy_cum_return", "mean"),
@@ -227,11 +307,11 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, o
         .head(top_k)
     )
 
-    top = (
-        work.sort_values(["train_strategy_sharpe", "_abs_train_ic"], ascending=False)
-        .head(top_k * 3)
-        .copy()
-        .reset_index(drop=True)
+    top = _diversified_top_candidates(
+        work,
+        candidate_count=top_k * 3,
+        min_train_n_obs=252,
+        max_per_symbol=2,
     )
     rows: list[dict[str, object]] = []
     for idx, row in top.iterrows():
@@ -246,6 +326,7 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, o
                 "train_ic_ir": ev.ic_ir,
                 "train_win_rate": ev.win_rate,
                 "train_stability": ev.stability,
+                "train_n_obs": ev.n_obs,
                 "train_regime_ic_high_vol": ev.regime_ic_high_vol,
                 "train_regime_ic_low_vol": ev.regime_ic_low_vol,
                 "train_regime_contrast": ev.regime_contrast,
@@ -258,6 +339,16 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, o
     return {
         "decision_boundary": "LLM/agent may only read train/in-sample structured evidence. Held-out test metrics are hidden until benchmark evaluation.",
         "family_summary": family_summary.drop(columns=["mean_abs_train_ic"]).to_dict(orient="records"),
+        "candidate_selection": {
+            "rank_basis": "train_strategy_sharpe, abs(train_ic), train_n_obs",
+            "candidate_count": len(rows),
+            "candidate_count_requested": top.attrs.get("candidate_count_requested", top_k * 3),
+            "candidate_count_after_train_filter": top.attrs.get("candidate_count_after_filter", len(top)),
+            "min_train_n_obs": top.attrs.get("min_train_n_obs", 252),
+            "base_max_per_symbol": 2,
+            "effective_max_per_symbol": top.attrs.get("effective_symbol_cap", 2),
+            "held_out_metrics_visible_to_llm": False,
+        },
         "top_factors": rows,
     }
 

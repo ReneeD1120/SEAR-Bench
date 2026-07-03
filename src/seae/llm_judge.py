@@ -230,6 +230,12 @@ def evaluate_llm_decisions(
     if decisions.empty:
         return decisions, {
             "n_decisions": 0.0,
+            "n_matched": 0.0,
+            "match_rate": float("nan"),
+            "n_valid_test_strategy_sharpe": 0.0,
+            "valid_test_strategy_sharpe_rate": float("nan"),
+            "n_valid_test_strategy_cum_return": 0.0,
+            "valid_test_strategy_cum_return_rate": float("nan"),
             "keep_rate": float("nan"),
             "mean_test_ic_kept": float("nan"),
             "mean_test_ic_dropped": float("nan"),
@@ -256,9 +262,16 @@ def evaluate_llm_decisions(
         working = working.merge(candidate_map, on="candidate_id", how="left")
     merged = working.merge(table[metric_cols + ["family"] + optional_cols], on=["symbol", "factor_name", "family"], how="left")
     keep = merged["llm_decision"] == "keep"
+    valid_strategy_sharpe = merged["test_strategy_sharpe"].notna()
+    valid_cum_return = merged["test_strategy_cum_return"].notna()
     summary = {
         "n_decisions": float(len(merged)),
         "n_matched": float(merged["test_ic"].notna().sum()),
+        "match_rate": float(merged["test_ic"].notna().mean()),
+        "n_valid_test_strategy_sharpe": float(valid_strategy_sharpe.sum()),
+        "valid_test_strategy_sharpe_rate": float(valid_strategy_sharpe.mean()),
+        "n_valid_test_strategy_cum_return": float(valid_cum_return.sum()),
+        "valid_test_strategy_cum_return_rate": float(valid_cum_return.mean()),
         "keep_rate": float(keep.mean()),
         "mean_test_ic_kept": float(merged.loc[keep, "test_ic"].mean()),
         "mean_test_ic_dropped": float(merged.loc[~keep, "test_ic"].mean()),
