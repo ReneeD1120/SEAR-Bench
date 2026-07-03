@@ -27,6 +27,8 @@ Decision protocol:
 - Prefer factors with consistent train evidence, stronger test strategy Sharpe, acceptable drawdown, and meaningful family-level support.
 - Be conservative when evidence conflicts.
 - Do not invent data or mention raw price patterns.
+- Do not compare against risk-free rates, transaction costs, sectors, or any baseline that is not explicitly present in the structured evidence.
+- If a field is missing, say it is unavailable instead of inferring it.
 - Make one decision for each provided top_factors candidate.
 - Copy candidate_id exactly from the provided top_factors list.
 - Also copy symbol, factor_name, and family exactly from the same candidate.

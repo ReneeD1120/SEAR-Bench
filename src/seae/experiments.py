@@ -183,9 +183,13 @@ def build_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, objec
         "factor_name",
         "train_ic",
         "test_ic",
+        "train_strategy_mean_return",
+        "train_strategy_sharpe",
+        "train_strategy_cum_return",
         "test_strategy_mean_return",
         "test_strategy_sharpe",
         "test_strategy_cum_return",
+        "test_strategy_max_drawdown",
     ]
     if "label_keep" in table.columns:
         top_cols.append("label_keep")
