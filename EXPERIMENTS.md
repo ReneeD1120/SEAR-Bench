@@ -123,6 +123,61 @@ HF_HOME=.cache/huggingface PYTHONPATH=src .venv-hf/bin/python -m seae.cli llm --
 - Result: the local Qwen call completed, but `Qwen2.5-0.5B-Instruct` returned invalid JSON, so the benchmark correctly recorded `parse_success=0.0` and `n_decisions=0.0`.
 - Interpretation: the Hugging Face backend works, but the 0.5B model is too weak for reliable structured JSON reasoning. Next tests should use a stronger Qwen model or constrained JSON decoding.
 
+## Remote GPU Qwen Smoke
+
+Environment:
+
+- Remote Windows host: `WIN-CMSMMA0PCTS`.
+- GPU: 3 x NVIDIA Quadro RTX 6000, 24GB each.
+- Conda env: `searbench`, Python 3.11.
+- CUDA PyTorch: `torch 2.7.1+cu118`, `torch.cuda.is_available=True`.
+- Data copied to remote as `C:\Users\drx\SEAR-Bench\data\qfq.zip`.
+
+Windows compatibility fix:
+
+- `NamedTemporaryFile`-based zip loading failed on Windows because pandas could not reopen the temporary CSV.
+- `load_zip_archive` now reads CSV bytes directly from the zip archive.
+
+Commands tested:
+
+```bash
+conda run -n searbench python -m seae.cli real --zip-path data\qfq.zip --limit 2 --output-dir outputs\remote_qfq_smoke
+```
+
+Result:
+
+- Real data smoke passed with `552` factor rows.
+
+Qwen 1.5B:
+
+```bash
+conda run -n searbench python -m seae.cli llm --backend hf-local --zip-path data\qfq.zip --limit 2 --top-k 2 --model Qwen/Qwen2.5-1.5B-Instruct --hf-device-map auto --max-new-tokens 1024
+```
+
+- `parse_success=1.0`.
+- `n_decisions=6`, `n_matched=6`.
+- `keep_rate=0.0`.
+- `rule_agreement_rate=1.0`.
+
+Qwen 3B:
+
+```bash
+conda run -n searbench python -m seae.cli llm --backend hf-local --zip-path data\qfq.zip --limit 2 --top-k 2 --model Qwen/Qwen2.5-3B-Instruct --hf-device-map auto --max-new-tokens 1024
+```
+
+- `parse_success=1.0`.
+- `n_decisions=6`, `n_matched=6`.
+- `keep_rate=0.1667`.
+- `rule_agreement_rate=0.8333`.
+- Kept mean test IC: `0.1235`; dropped mean test IC: `-0.0069`.
+- Kept mean test Sharpe: `1.6180`; dropped mean test Sharpe: `1.8925`.
+
+Interpretation:
+
+- Remote GPU execution is now working.
+- Qwen 3B is a usable first open-source LLM reasoning baseline: it returns valid JSON and exact candidate matches.
+- The rationale is not fully faithful yet; it still makes occasional numerical interpretation errors. This suggests SEAR-Bench should evaluate both decision metrics and explanation faithfulness.
+
 - The current code is an offline benchmark, not reinforcement learning.
 - The next step is to serve Qwen, let it consume only structured evidence, produce keep/drop/regime rationales, and evaluate those decisions on held-out benchmark metrics.
 - A later version should add portfolio-level backtesting with adjusted prices, transaction costs, and cross-sectional long-short construction.
