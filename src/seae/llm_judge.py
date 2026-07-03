@@ -49,7 +49,7 @@ Return JSON with this exact schema:
       "factor_name": "...",
       "family": "...",
       "decision": "keep/drop",
-      "active_regime": "high_vol/low_vol/none/uncertain",
+      "active_regime": "uncertain",
       "confidence": 0.0,
       "rationale": "..."
     }}
@@ -148,11 +148,11 @@ def call_huggingface_local_chat(
     else:
         prompt = "\n\n".join(f"{m['role'].upper()}:\n{m['content']}" for m in messages) + "\n\nASSISTANT:\n"
     inputs = tokenizer(prompt, return_tensors="pt")
-    if not device_map:
-        try:
-            inputs = inputs.to(hf_model.device)
-        except AttributeError:
-            pass
+    try:
+        target_device = next(hf_model.parameters()).device
+        inputs = inputs.to(target_device)
+    except (AttributeError, StopIteration):
+        pass
     generate_kwargs: dict[str, object] = {
         "max_new_tokens": max_new_tokens,
         "do_sample": temperature > 0.0,
@@ -194,6 +194,9 @@ def normalize_llm_decisions(response: dict[str, object]) -> pd.DataFrame:
             confidence = float(item.get("confidence", 0.0))
         except (TypeError, ValueError):
             confidence = 0.0
+        active_regime = str(item.get("active_regime", "uncertain")).lower().strip()
+        if active_regime not in {"high_vol", "low_vol", "none", "uncertain"}:
+            active_regime = "uncertain"
         rows.append(
             {
                 "candidate_id": str(item.get("candidate_id", "")),
@@ -201,7 +204,7 @@ def normalize_llm_decisions(response: dict[str, object]) -> pd.DataFrame:
                 "factor_name": str(item.get("factor_name", "")),
                 "family": str(item.get("family", "")),
                 "llm_decision": decision,
-                "llm_active_regime": str(item.get("active_regime", "uncertain")),
+                "llm_active_regime": active_regime,
                 "llm_confidence": max(0.0, min(1.0, confidence)),
                 "llm_rationale": str(item.get("rationale", "")),
             }
