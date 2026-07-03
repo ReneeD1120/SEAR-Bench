@@ -50,6 +50,7 @@ def main() -> None:
     p_llm.add_argument("--prompt-out", default="outputs/llm_prompt.json")
     p_llm.add_argument("--response-out", default="outputs/llm_response.json")
     p_llm.add_argument("--decisions-out", default="outputs/llm_decisions.csv")
+    p_llm.add_argument("--summary-out", default="outputs/llm_summary.json")
     p_llm.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.cmd == "synthetic":
@@ -130,13 +131,21 @@ def main() -> None:
         decisions = normalize_llm_decisions(response)
         scored, summary = evaluate_llm_decisions(table, decisions, reasoning_view=view)
         summary["parse_success"] = float(parse_success)
+        summary["backend"] = args.backend
+        summary["model"] = args.model
+        summary["limit"] = float(args.limit)
+        summary["top_k"] = float(args.top_k)
         decisions_out = Path(args.decisions_out)
         decisions_out.parent.mkdir(parents=True, exist_ok=True)
         scored.to_csv(decisions_out, index=False)
+        summary_out = Path(args.summary_out)
+        summary_out.parent.mkdir(parents=True, exist_ok=True)
+        summary_out.write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         print(f"prompt_written={prompt_out}")
         print(f"response_written={response_out}")
         print(f"raw_response_written={raw_out}")
         print(f"decisions_written={decisions_out}")
+        print(f"summary_written={summary_out}")
         print(summary)
 
 
