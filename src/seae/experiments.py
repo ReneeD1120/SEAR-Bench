@@ -204,6 +204,64 @@ def build_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, objec
     }
 
 
+def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, object]:
+    """Build a leakage-free view for LLM decisions.
+
+    The LLM sees only train/in-sample structured evidence. Held-out test metrics
+    are joined later by `evaluate_llm_decisions`.
+    """
+    work = table.copy()
+    work["_abs_train_ic"] = work["train_ic"].abs()
+    family_summary = (
+        work.groupby("family", as_index=False)
+        .agg(
+            mean_train_ic=("train_ic", "mean"),
+            mean_abs_train_ic=("_abs_train_ic", "mean"),
+            mean_train_strategy_return=("train_strategy_mean_return", "mean"),
+            mean_train_strategy_sharpe=("train_strategy_sharpe", "mean"),
+            mean_train_strategy_cum_return=("train_strategy_cum_return", "mean"),
+            mean_train_strategy_max_drawdown=("train_strategy_max_drawdown", "mean"),
+            factor_count=("factor_name", "count"),
+        )
+        .sort_values(["mean_train_strategy_sharpe", "mean_abs_train_ic"], ascending=False)
+        .head(top_k)
+    )
+
+    top = (
+        work.sort_values(["train_strategy_sharpe", "_abs_train_ic"], ascending=False)
+        .head(top_k * 3)
+        .copy()
+        .reset_index(drop=True)
+    )
+    rows: list[dict[str, object]] = []
+    for idx, row in top.iterrows():
+        ev = row["evidence"]
+        rows.append(
+            {
+                "candidate_id": f"C{idx:03d}",
+                "symbol": row["symbol"],
+                "family": row["family"],
+                "factor_name": row["factor_name"],
+                "train_ic": row["train_ic"],
+                "train_ic_ir": ev.ic_ir,
+                "train_win_rate": ev.win_rate,
+                "train_stability": ev.stability,
+                "train_regime_ic_high_vol": ev.regime_ic_high_vol,
+                "train_regime_ic_low_vol": ev.regime_ic_low_vol,
+                "train_regime_contrast": ev.regime_contrast,
+                "train_strategy_mean_return": row["train_strategy_mean_return"],
+                "train_strategy_sharpe": row["train_strategy_sharpe"],
+                "train_strategy_cum_return": row["train_strategy_cum_return"],
+                "train_strategy_max_drawdown": row["train_strategy_max_drawdown"],
+            }
+        )
+    return {
+        "decision_boundary": "LLM/agent may only read train/in-sample structured evidence. Held-out test metrics are hidden until benchmark evaluation.",
+        "family_summary": family_summary.drop(columns=["mean_abs_train_ic"]).to_dict(orient="records"),
+        "top_factors": rows,
+    }
+
+
 def build_synthetic_dataset(config: SyntheticConfig | None = None) -> pd.DataFrame:
     df, _ = generate_synthetic_benchmark(config or SyntheticConfig())
     return df

@@ -158,6 +158,7 @@ conda run -n searbench python -m seae.cli llm --backend hf-local --zip-path data
 - `n_decisions=6`, `n_matched=6`.
 - `keep_rate=0.0`.
 - `rule_agreement_rate=1.0`.
+- Note: this run used the early diagnostic reasoning view and should be treated as a pipeline smoke, not a formal held-out LLM benchmark.
 
 Qwen 3B:
 
@@ -171,12 +172,14 @@ conda run -n searbench python -m seae.cli llm --backend hf-local --zip-path data
 - `rule_agreement_rate=0.8333`.
 - Kept mean test IC: `0.1235`; dropped mean test IC: `-0.0069`.
 - Kept mean test Sharpe: `1.6180`; dropped mean test Sharpe: `1.8925`.
+- Note: this run used the early diagnostic reasoning view and should be treated as a pipeline smoke, not a formal held-out LLM benchmark.
 
 Interpretation:
 
 - Remote GPU execution is now working.
 - Qwen 3B is a usable first open-source LLM reasoning baseline: it returns valid JSON and exact candidate matches.
 - The rationale is not fully faithful yet; it still makes occasional numerical interpretation errors. This suggests SEAR-Bench should evaluate both decision metrics and explanation faithfulness.
+- Formal LLM evaluation now uses `build_llm_reasoning_view`, which exposes only train/in-sample evidence and hides all held-out test metrics until scoring.
 
 - The current code is an offline benchmark, not reinforcement learning.
 - The next step is to serve Qwen, let it consume only structured evidence, produce keep/drop/regime rationales, and evaluate those decisions on held-out benchmark metrics.

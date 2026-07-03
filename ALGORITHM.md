@@ -38,12 +38,13 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - family-level summaries rank the most promising factor families
    - top factor candidates provide concrete evidence for agentic reasoning
    - the `sear reason` command emits this view as JSON for a downstream LLM agent
+   - `sear reason --llm-safe` emits the leakage-free version used by `sear llm`
 6. Run LLM reasoning:
    - `sear llm` sends the structured evidence view to an OpenAI-compatible chat endpoint.
    - `sear llm --backend hf-local` can also call a Hugging Face `transformers` model directly.
    - Qwen is the first open-source target model.
    - The LLM must return strict JSON keep/drop, active regime, confidence, and rationale fields.
-   - The LLM still cannot inspect raw prices or hidden labels.
+   - The LLM still cannot inspect raw prices, hidden labels, or held-out test metrics.
 7. Evaluate:
    - synthetic: keep accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
    - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown

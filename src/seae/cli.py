@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .experiments import build_reasoning_view, run_real_market_experiment, run_synthetic_experiment
+from .experiments import build_llm_reasoning_view, build_reasoning_view, run_real_market_experiment, run_synthetic_experiment
 from .llm_judge import (
     build_llm_messages,
     call_huggingface_local_chat,
@@ -34,6 +34,7 @@ def main() -> None:
     p_reason.add_argument("--zip-path", required=True)
     p_reason.add_argument("--limit", type=int, default=10)
     p_reason.add_argument("--top-k", type=int, default=5)
+    p_reason.add_argument("--llm-safe", action="store_true")
     p_llm = sub.add_parser("llm")
     p_llm.add_argument("--zip-path", required=True)
     p_llm.add_argument("--limit", type=int, default=10)
@@ -80,11 +81,11 @@ def main() -> None:
         print(summary)
     elif args.cmd == "reason":
         table, _, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=None)
-        view = build_reasoning_view(table, top_k=args.top_k)
+        view = build_llm_reasoning_view(table, top_k=args.top_k) if args.llm_safe else build_reasoning_view(table, top_k=args.top_k)
         print(json.dumps(view, indent=2, sort_keys=True))
     elif args.cmd == "llm":
         table, _, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=None)
-        view = build_reasoning_view(table, top_k=args.top_k)
+        view = build_llm_reasoning_view(table, top_k=args.top_k)
         messages = build_llm_messages(view)
         prompt_out = Path(args.prompt_out)
         prompt_out.parent.mkdir(parents=True, exist_ok=True)

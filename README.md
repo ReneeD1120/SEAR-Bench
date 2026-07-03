@@ -38,3 +38,5 @@ The LLM/agent layer is not allowed to generate hidden labels or inspect raw pric
 ## Qwen Reasoning
 
 `sear llm` is the first real LLM reasoning entry point. It supports both OpenAI-compatible chat endpoints and Hugging Face local `transformers` models, so Qwen can be called either through a server or directly from the Hugging Face model hub/local checkpoint. The command writes the prompt, calls the model unless `--dry-run` is set, parses strict JSON decisions, and evaluates the model's keep/drop choices against held-out benchmark metrics.
+
+For formal LLM evaluation, `sear llm` uses a leakage-free view: the model sees only train/in-sample structured evidence. Held-out test IC and strategy metrics are hidden until benchmark scoring. Use `sear reason --llm-safe` to inspect the exact LLM input view.
