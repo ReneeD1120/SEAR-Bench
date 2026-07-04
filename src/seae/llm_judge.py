@@ -23,6 +23,9 @@ USER_PROMPT_TEMPLATE = """We are testing structured-evidence agentic reasoning f
 
 Decision protocol:
 - Use only the provided structured evidence.
+- Each candidate includes factor_name, formula, train_factor_sample, and train evidence.
+- Use formula to interpret the economic meaning of the factor.
+- Use train_factor_sample only as in-sample factor behavior, not as future performance.
 - A factor can be useful even if IC is negative, if the oriented strategy proxy is strong.
 - Some ablation views may include evidence_tags. If present, treat them as derived train-only summaries, not labels or benchmark answers.
 - Prefer factors with consistent train evidence, stronger train strategy Sharpe, acceptable drawdown, sufficient train_n_obs, and meaningful family-level support.

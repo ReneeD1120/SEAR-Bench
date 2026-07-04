@@ -16,7 +16,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
 2. Build candidate factors:
    - `alpha158` bank: Qlib-style core templates over returns, momentum, moving-average deviation, volatility, volume ratios, range, gap, intraday behavior, and candlestick geometry
    - `alpha360` bank: alpha158 plus AlphaBench-style expansions with lags, z-scores, rolling ranks, min-max normalization, spreads, and interactions
-   - each factor carries a `family` field for downstream ablation and agent reasoning
+   - each factor carries a `name`, `family`, and human-readable `formula`
 3. Extract structured evidence for each factor:
    - `IC`
    - `ICIR`
@@ -36,15 +36,18 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - Both judges only consume in-sample structured evidence.
 5. Build an agent reasoning view:
    - family-level summaries rank the most promising factor families
-   - top factor candidates provide concrete evidence for agentic reasoning
+   - top factor candidates provide `factor_name`, `family`, `formula`, train-only `train_factor_sample`, and train-only statistical evidence
    - the `sear reason` command emits this view as JSON for a downstream LLM agent
-   - `sear reason --llm-safe` emits the leakage-free version used by `sear llm`
+   - `sear reason` defaults to the leakage-free version used by `sear llm`
+   - `sear reason --diagnostic-leaky` emits the held-out diagnostic view and must not be used as LLM input
 6. Run LLM reasoning:
    - `sear llm` sends the structured evidence view to an OpenAI-compatible chat endpoint.
    - `sear llm --backend hf-local` can also call a Hugging Face `transformers` model directly.
    - Qwen is the first open-source target model.
    - The LLM must return strict JSON keep/drop, active regime, confidence, and rationale fields.
-   - The LLM still cannot inspect raw prices, hidden labels, or held-out test metrics.
+   - The LLM can inspect factor names, formulas, train-only factor samples, and train-only evidence.
+   - The LLM still cannot inspect raw prices, hidden labels, rule decisions, or held-out test metrics.
+   - `--include-evidence-tags` enables a tag-assisted ablation; it is not the default formal reasoning view.
 7. Evaluate:
    - synthetic: keep accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
    - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown

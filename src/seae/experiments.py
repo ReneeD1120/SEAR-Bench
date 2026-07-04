@@ -9,7 +9,7 @@ import pandas as pd
 from .data import load_zip_archive
 from .evidence import FactorEvidence
 from .evidence import split_time_evidence
-from .factors import factor_series_map
+from .factors import factor_metadata_map, factor_series_map
 from .judge import LinearEvidenceJudge, fit_judge_from_rows, rule_based_judge
 from .synthetic import SyntheticConfig, generate_synthetic_benchmark
 
@@ -66,11 +66,29 @@ def _labels_for_synthetic_factor(family: str, factor_name: str) -> dict[str, obj
     return {"label_keep": 0, "active_regime": "none"}
 
 
-def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, tuple[str, pd.Series]]:
+def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, tuple[str, str, pd.Series]]:
     factors = factor_series_map(df, bank="alpha360")
+    metadata = factor_metadata_map(bank="alpha360")
+    out = {
+        name: (family, metadata[name].formula, series)
+        for name, (family, series) in factors.items()
+    }
     if synthetic:
-        factors["noise_factor"] = ("noise", df["noise_factor"])
-    return factors
+        out["noise_factor"] = ("noise", "synthetic noise_factor", df["noise_factor"])
+    return out
+
+
+def _train_factor_sample(df: pd.DataFrame, factor: pd.Series, *, split_ratio: float = 0.7, n: int = 12) -> list[dict[str, object]]:
+    cutoff = int(len(df) * split_ratio)
+    dates = df.iloc[:cutoff]["date"] if "date" in df.columns else pd.Series(range(cutoff), index=df.index[:cutoff])
+    sample = pd.DataFrame({"date": dates, "value": factor.iloc[:cutoff]}).replace([np.inf, -np.inf], np.nan).dropna().tail(n)
+    rows: list[dict[str, object]] = []
+    for _, row in sample.iterrows():
+        date_value = row["date"]
+        if hasattr(date_value, "strftime"):
+            date_value = date_value.strftime("%Y-%m-%d")
+        rows.append({"date": str(date_value), "value": float(row["value"])})
+    return rows
 
 
 def _factor_rows(
@@ -83,12 +101,14 @@ def _factor_rows(
     rows: list[dict[str, object]] = []
     factors = _factor_library(df, synthetic=synthetic)
     for factor_name, value in factors.items():
-        family, series = value
+        family, formula, series = value
         ev = split_time_evidence(df, series, symbol=symbol, factor_name=factor_name, horizon=horizon)
         row = {
             "symbol": symbol,
             "factor_name": factor_name,
             "family": family,
+            "formula": formula,
+            "train_factor_sample": _train_factor_sample(df, series),
             "evidence": ev,
             "train_ic": ev.train_ic,
             "test_ic": ev.test_ic,
@@ -372,6 +392,8 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5, *, include_tag
             "symbol": row["symbol"],
             "family": row["family"],
             "factor_name": row["factor_name"],
+            "formula": row.get("formula", ""),
+            "train_factor_sample": row.get("train_factor_sample", []),
             "train_ic": row["train_ic"],
             "train_ic_ir": ev.ic_ir,
             "train_win_rate": ev.win_rate,
@@ -559,7 +581,7 @@ def run_real_market_experiment(
     for eq in equities:
         factors = _factor_library(eq.frame, synthetic=False)
         for factor_name, value in factors.items():
-            family, series = value
+            family, formula, series = value
             ev = split_time_evidence(eq.frame, series, symbol=eq.symbol, factor_name=factor_name)
             pred = rule_based_judge(ev)
             rows.append(
@@ -567,6 +589,8 @@ def run_real_market_experiment(
                     "symbol": eq.symbol,
                     "factor_name": factor_name,
                     "family": family,
+                    "formula": formula,
+                    "train_factor_sample": _train_factor_sample(eq.frame, series),
                     "train_ic": ev.train_ic,
                     "test_ic": ev.test_ic,
                     "train_strategy_mean_return": ev.strategy_mean_return,

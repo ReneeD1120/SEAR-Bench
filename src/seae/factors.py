@@ -11,6 +11,7 @@ import pandas as pd
 class FactorSpec:
     name: str
     family: str
+    formula: str
     transform: Callable[[pd.DataFrame], pd.Series]
 
 
@@ -131,38 +132,38 @@ def alpha158_specs() -> list[FactorSpec]:
     for w in (5, 10, 20, 60, 120):
         specs.extend(
             [
-                FactorSpec(f"ret_{w}d", "return", lambda df, w=w: df[f"ret_{w}d"]),
-                FactorSpec(f"mom_{w}d", "momentum", lambda df, w=w: df[f"mom_{w}d"]),
-                FactorSpec(f"vol_{w}d", "volatility", lambda df, w=w: df[f"vol_{w}d"]),
-                FactorSpec(f"price_to_ma_{w}", "mean_reversion", lambda df, w=w: df[f"price_to_ma_{w}"]),
-                FactorSpec(f"volume_ratio_{w}", "volume", lambda df, w=w: df[f"volume_ratio_{w}"]),
-                FactorSpec(f"volume_std_{w}", "volume_volatility", lambda df, w=w: df[f"volume_std_{w}"]),
+                FactorSpec(f"ret_{w}d", "return", f"close / close.shift({w}) - 1", lambda df, w=w: df[f"ret_{w}d"]),
+                FactorSpec(f"mom_{w}d", "momentum", f"close / close.shift({w}) - 1", lambda df, w=w: df[f"mom_{w}d"]),
+                FactorSpec(f"vol_{w}d", "volatility", f"rolling_std(close.pct_change(), {w})", lambda df, w=w: df[f"vol_{w}d"]),
+                FactorSpec(f"price_to_ma_{w}", "mean_reversion", f"close / rolling_mean(close, {w}) - 1", lambda df, w=w: df[f"price_to_ma_{w}"]),
+                FactorSpec(f"volume_ratio_{w}", "volume", f"volume / rolling_mean(volume, {w})", lambda df, w=w: df[f"volume_ratio_{w}"]),
+                FactorSpec(f"volume_std_{w}", "volume_volatility", f"rolling_std(volume.pct_change(), {w})", lambda df, w=w: df[f"volume_std_{w}"]),
             ]
         )
     specs.extend(
         [
-            FactorSpec("range_pct", "range", lambda df: df["range_pct"]),
-            FactorSpec("hl_spread", "range", lambda df: df["hl_spread"]),
-            FactorSpec("open_close_gap", "gap", lambda df: df["open_close_gap"]),
-            FactorSpec("close_open_return", "intraday", lambda df: df["close_open_return"]),
-            FactorSpec("intraday_reversal", "intraday", lambda df: df["intraday_reversal"]),
-            FactorSpec("open_to_close", "price_level", lambda df: df["open_to_close"]),
-            FactorSpec("high_to_close", "price_level", lambda df: df["high_to_close"]),
-            FactorSpec("low_to_close", "price_level", lambda df: df["low_to_close"]),
-            FactorSpec("k_mid", "candlestick", lambda df: df["k_mid"]),
-            FactorSpec("k_mid2", "candlestick", lambda df: df["k_mid2"]),
-            FactorSpec("k_len", "candlestick", lambda df: df["k_len"]),
-            FactorSpec("k_upper", "candlestick", lambda df: df["k_upper"]),
-            FactorSpec("k_upper2", "candlestick", lambda df: df["k_upper2"]),
-            FactorSpec("k_lower", "candlestick", lambda df: df["k_lower"]),
-            FactorSpec("k_lower2", "candlestick", lambda df: df["k_lower2"]),
-            FactorSpec("k_shift", "candlestick", lambda df: df["k_shift"]),
-            FactorSpec("k_shift2", "candlestick", lambda df: df["k_shift2"]),
-            FactorSpec("price_to_ma_5_z", "normalization", _rolling_zscore("price_to_ma_5", 20)),
-            FactorSpec("price_to_ma_20_z", "normalization", _rolling_zscore("price_to_ma_20", 20)),
-            FactorSpec("volume_ratio_20_z", "normalization", _rolling_zscore("volume_ratio_20", 20)),
-            FactorSpec("amplitude_rank_20", "rank", _rolling_rank("amplitude", 20)),
-            FactorSpec("range_minmax_20", "rank", _rolling_minmax("range_pct", 20)),
+            FactorSpec("range_pct", "range", "(high - low) / close", lambda df: df["range_pct"]),
+            FactorSpec("hl_spread", "range", "(high - low) / open", lambda df: df["hl_spread"]),
+            FactorSpec("open_close_gap", "gap", "open / close.shift(1) - 1", lambda df: df["open_close_gap"]),
+            FactorSpec("close_open_return", "intraday", "close / open - 1", lambda df: df["close_open_return"]),
+            FactorSpec("intraday_reversal", "intraday", "-(close / open - 1)", lambda df: df["intraday_reversal"]),
+            FactorSpec("open_to_close", "price_level", "open / close - 1", lambda df: df["open_to_close"]),
+            FactorSpec("high_to_close", "price_level", "high / close - 1", lambda df: df["high_to_close"]),
+            FactorSpec("low_to_close", "price_level", "low / close - 1", lambda df: df["low_to_close"]),
+            FactorSpec("k_mid", "candlestick", "(close - open) / open", lambda df: df["k_mid"]),
+            FactorSpec("k_mid2", "candlestick", "(close - open) / (high - low)", lambda df: df["k_mid2"]),
+            FactorSpec("k_len", "candlestick", "(high - low) / open", lambda df: df["k_len"]),
+            FactorSpec("k_upper", "candlestick", "(high - max(open, close)) / open", lambda df: df["k_upper"]),
+            FactorSpec("k_upper2", "candlestick", "(high - max(open, close)) / (high - low)", lambda df: df["k_upper2"]),
+            FactorSpec("k_lower", "candlestick", "(min(open, close) - low) / open", lambda df: df["k_lower"]),
+            FactorSpec("k_lower2", "candlestick", "(min(open, close) - low) / (high - low)", lambda df: df["k_lower2"]),
+            FactorSpec("k_shift", "candlestick", "(2 * close - high - low) / open", lambda df: df["k_shift"]),
+            FactorSpec("k_shift2", "candlestick", "(2 * close - high - low) / (high - low)", lambda df: df["k_shift2"]),
+            FactorSpec("price_to_ma_5_z", "normalization", "zscore(price_to_ma_5, 20)", _rolling_zscore("price_to_ma_5", 20)),
+            FactorSpec("price_to_ma_20_z", "normalization", "zscore(price_to_ma_20, 20)", _rolling_zscore("price_to_ma_20", 20)),
+            FactorSpec("volume_ratio_20_z", "normalization", "zscore(volume_ratio_20, 20)", _rolling_zscore("volume_ratio_20", 20)),
+            FactorSpec("amplitude_rank_20", "rank", "rolling_rank(amplitude, 20)", _rolling_rank("amplitude", 20)),
+            FactorSpec("range_minmax_20", "rank", "rolling_minmax(range_pct, 20)", _rolling_minmax("range_pct", 20)),
         ]
     )
     return specs
@@ -189,27 +190,27 @@ def expansion_specs() -> list[FactorSpec]:
     windows = [5, 10, 20, 60]
     for series_name, family in base:
         for w in windows:
-            specs.append(FactorSpec(f"{series_name}_z{w}", f"{family}_zscore", _rolling_zscore(series_name, w)))
-            specs.append(FactorSpec(f"{series_name}_rank{w}", f"{family}_rank", _rolling_rank(series_name, w)))
-            specs.append(FactorSpec(f"{series_name}_minmax{w}", f"{family}_minmax", _rolling_minmax(series_name, w)))
+            specs.append(FactorSpec(f"{series_name}_z{w}", f"{family}_zscore", f"zscore({series_name}, {w})", _rolling_zscore(series_name, w)))
+            specs.append(FactorSpec(f"{series_name}_rank{w}", f"{family}_rank", f"rolling_rank({series_name}, {w})", _rolling_rank(series_name, w)))
+            specs.append(FactorSpec(f"{series_name}_minmax{w}", f"{family}_minmax", f"rolling_minmax({series_name}, {w})", _rolling_minmax(series_name, w)))
         for lag in (1, 2, 5):
-            specs.append(FactorSpec(f"{series_name}_lag{lag}", f"{family}_lag", _lagged(series_name, lag)))
+            specs.append(FactorSpec(f"{series_name}_lag{lag}", f"{family}_lag", f"{series_name}.shift({lag})", _lagged(series_name, lag)))
     specs.extend(
         [
-            FactorSpec("price_to_ma_5_minus_20", "spread", _diff("price_to_ma_5", "price_to_ma_20")),
-            FactorSpec("price_to_ma_20_minus_60", "spread", _diff("price_to_ma_20", "price_to_ma_60")),
-            FactorSpec("price_to_ma_60_minus_120", "spread", _diff("price_to_ma_60", "price_to_ma_120")),
-            FactorSpec("volume_ratio_5_minus_20", "spread", _diff("volume_ratio_5", "volume_ratio_20")),
-            FactorSpec("volume_ratio_20_minus_60", "spread", _diff("volume_ratio_20", "volume_ratio_60")),
-            FactorSpec("mom_5_over_vol_20", "interaction", _ratio("mom_5d", "vol_20d")),
-            FactorSpec("mom_20_over_vol_60", "interaction", _ratio("mom_20d", "vol_60d")),
-            FactorSpec("ret_20_over_vol_60", "interaction", _ratio("ret_20d", "vol_60d")),
-            FactorSpec("range_over_volume", "interaction", _ratio("range_pct", "volume_ratio_20")),
-            FactorSpec("amplitude_over_vol", "interaction", _ratio("amplitude", "vol_20d")),
-            FactorSpec("close_open_over_gap", "interaction", _ratio("close_open_return", "open_close_gap")),
-            FactorSpec("k_mid_over_k_len", "interaction", _ratio("k_mid", "k_len")),
-            FactorSpec("upper_minus_lower_shadow", "candlestick_spread", _diff("k_upper", "k_lower")),
-            FactorSpec("upper2_minus_lower2_shadow", "candlestick_spread", _diff("k_upper2", "k_lower2")),
+            FactorSpec("price_to_ma_5_minus_20", "spread", "price_to_ma_5 - price_to_ma_20", _diff("price_to_ma_5", "price_to_ma_20")),
+            FactorSpec("price_to_ma_20_minus_60", "spread", "price_to_ma_20 - price_to_ma_60", _diff("price_to_ma_20", "price_to_ma_60")),
+            FactorSpec("price_to_ma_60_minus_120", "spread", "price_to_ma_60 - price_to_ma_120", _diff("price_to_ma_60", "price_to_ma_120")),
+            FactorSpec("volume_ratio_5_minus_20", "spread", "volume_ratio_5 - volume_ratio_20", _diff("volume_ratio_5", "volume_ratio_20")),
+            FactorSpec("volume_ratio_20_minus_60", "spread", "volume_ratio_20 - volume_ratio_60", _diff("volume_ratio_20", "volume_ratio_60")),
+            FactorSpec("mom_5_over_vol_20", "interaction", "mom_5d / vol_20d", _ratio("mom_5d", "vol_20d")),
+            FactorSpec("mom_20_over_vol_60", "interaction", "mom_20d / vol_60d", _ratio("mom_20d", "vol_60d")),
+            FactorSpec("ret_20_over_vol_60", "interaction", "ret_20d / vol_60d", _ratio("ret_20d", "vol_60d")),
+            FactorSpec("range_over_volume", "interaction", "range_pct / volume_ratio_20", _ratio("range_pct", "volume_ratio_20")),
+            FactorSpec("amplitude_over_vol", "interaction", "amplitude / vol_20d", _ratio("amplitude", "vol_20d")),
+            FactorSpec("close_open_over_gap", "interaction", "close_open_return / open_close_gap", _ratio("close_open_return", "open_close_gap")),
+            FactorSpec("k_mid_over_k_len", "interaction", "k_mid / k_len", _ratio("k_mid", "k_len")),
+            FactorSpec("upper_minus_lower_shadow", "candlestick_spread", "k_upper - k_lower", _diff("k_upper", "k_lower")),
+            FactorSpec("upper2_minus_lower2_shadow", "candlestick_spread", "k_upper2 - k_lower2", _diff("k_upper2", "k_lower2")),
         ]
     )
     return specs
@@ -242,6 +243,7 @@ def build_factor_bank(df: pd.DataFrame, *, bank: str = "alpha158") -> pd.DataFra
                 {
                     "factor_name": spec.name,
                     "family": spec.family,
+                    "formula": spec.formula,
                     "value": s.astype(float),
                 },
                 index=out.index,
@@ -258,6 +260,10 @@ def factor_series_map(df: pd.DataFrame, *, bank: str = "alpha158") -> dict[str, 
     for spec in specs:
         result[spec.name] = (spec.family, _safe_series(spec.transform(out)))
     return result
+
+
+def factor_metadata_map(*, bank: str = "alpha158") -> dict[str, FactorSpec]:
+    return {spec.name: spec for spec in _specs_for_bank(bank)}
 
 
 def make_candidate_factor_sets(df: pd.DataFrame, *, bank: str = "alpha158") -> dict[str, pd.Series]:

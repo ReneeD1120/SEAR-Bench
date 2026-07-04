@@ -33,10 +33,10 @@ sear llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zi
 
 ## Current Design Boundary
 
-The LLM/agent layer is not allowed to generate hidden labels or inspect raw prices directly. It should only read the structured evidence view emitted by `sear reason`, then make a keep/drop and regime explanation. Final judgment still lands on benchmark metrics computed by code.
+The LLM/agent layer is not allowed to generate hidden labels or inspect raw prices directly. It reads the leakage-free view emitted by `sear reason`: factor names, formulas, train-only factor samples, and train-only structured evidence. It then makes a keep/drop and regime explanation. Final judgment still lands on held-out benchmark metrics computed by code.
 
 ## Qwen Reasoning
 
 `sear llm` is the first real LLM reasoning entry point. It supports both OpenAI-compatible chat endpoints and Hugging Face local `transformers` models, so Qwen can be called either through a server or directly from the Hugging Face model hub/local checkpoint. The command writes the prompt, calls the model unless `--dry-run` is set, parses strict JSON decisions, and evaluates the model's keep/drop choices against held-out benchmark metrics.
 
-For formal LLM evaluation, `sear llm` uses a leakage-free view: the model sees only train/in-sample structured evidence. Held-out test IC and strategy metrics are hidden until benchmark scoring. Use `sear reason --llm-safe` to inspect the exact LLM input view.
+For formal LLM evaluation, `sear llm` uses a leakage-free view: the model sees only factor formulas, train/in-sample factor samples, and train/in-sample structured evidence. Held-out test IC, strategy metrics, hidden labels, and rule decisions are hidden until benchmark scoring. Use `sear reason` to inspect the exact default LLM input view. Use `--include-evidence-tags` only for tag-assisted ablations.
