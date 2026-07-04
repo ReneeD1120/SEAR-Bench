@@ -24,11 +24,8 @@ USER_PROMPT_TEMPLATE = """We are testing structured-evidence agentic reasoning f
 Decision protocol:
 - Use only the provided structured evidence.
 - A factor can be useful even if IC is negative, if the oriented strategy proxy is strong.
-- Use evidence_tags as the primary train-only summary when assigning reason codes.
-- If evidence_tags.strategy_strength is strong, do not use weak_train_strategy for that candidate.
-- If evidence_tags.history_quality is sufficient or long, do not use insufficient_history for that candidate.
+- Some ablation views may include evidence_tags. If present, treat them as derived train-only summaries, not labels or benchmark answers.
 - Prefer factors with consistent train evidence, stronger train strategy Sharpe, acceptable drawdown, sufficient train_n_obs, and meaningful family-level support.
-- Consider keep when strategy_strength is strong, history_quality is sufficient/long, and drawdown_risk is acceptable/moderate, even if ic_signal is conflicting.
 - Be conservative when evidence conflicts.
 - Do not invent data or mention raw price patterns.
 - Do not compare against risk-free rates, transaction costs, sectors, or any baseline that is not explicitly present in the structured evidence.

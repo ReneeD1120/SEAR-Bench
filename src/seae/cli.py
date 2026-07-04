@@ -4,7 +4,13 @@ import argparse
 import json
 from pathlib import Path
 
-from .experiments import build_llm_reasoning_view, build_reasoning_view, run_real_market_experiment, run_synthetic_experiment
+from .experiments import (
+    audit_llm_reasoning_view,
+    build_llm_reasoning_view,
+    build_reasoning_view,
+    run_real_market_experiment,
+    run_synthetic_experiment,
+)
 from .llm_judge import (
     build_llm_messages,
     call_huggingface_local_chat,
@@ -34,7 +40,8 @@ def main() -> None:
     p_reason.add_argument("--zip-path", required=True)
     p_reason.add_argument("--limit", type=int, default=10)
     p_reason.add_argument("--top-k", type=int, default=5)
-    p_reason.add_argument("--llm-safe", action="store_true")
+    p_reason.add_argument("--diagnostic-leaky", action="store_true")
+    p_reason.add_argument("--include-evidence-tags", action="store_true")
     p_llm = sub.add_parser("llm")
     p_llm.add_argument("--zip-path", required=True)
     p_llm.add_argument("--limit", type=int, default=10)
@@ -53,6 +60,7 @@ def main() -> None:
     p_llm.add_argument("--decisions-out", default="outputs/llm_decisions.csv")
     p_llm.add_argument("--summary-out", default="outputs/llm_summary.json")
     p_llm.add_argument("--dry-run", action="store_true")
+    p_llm.add_argument("--include-evidence-tags", action="store_true")
     args = parser.parse_args()
     if args.cmd == "synthetic":
         config = SyntheticConfig(n_assets=args.n_assets, n_days=args.n_days, seed=args.seed)
@@ -81,11 +89,18 @@ def main() -> None:
         print(summary)
     elif args.cmd == "reason":
         table, _, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=None)
-        view = build_llm_reasoning_view(table, top_k=args.top_k) if args.llm_safe else build_reasoning_view(table, top_k=args.top_k)
+        view = (
+            build_reasoning_view(table, top_k=args.top_k)
+            if args.diagnostic_leaky
+            else build_llm_reasoning_view(table, top_k=args.top_k, include_tags=args.include_evidence_tags)
+        )
         print(json.dumps(view, indent=2, sort_keys=True))
     elif args.cmd == "llm":
         table, _, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=None)
-        view = build_llm_reasoning_view(table, top_k=args.top_k)
+        view = build_llm_reasoning_view(table, top_k=args.top_k, include_tags=args.include_evidence_tags)
+        leakage_findings = audit_llm_reasoning_view(view)
+        if leakage_findings:
+            raise RuntimeError(f"LLM reasoning view contains forbidden leakage keys: {leakage_findings}")
         messages = build_llm_messages(view)
         prompt_out = Path(args.prompt_out)
         prompt_out.parent.mkdir(parents=True, exist_ok=True)
@@ -136,6 +151,7 @@ def main() -> None:
         summary["model"] = args.model
         summary["limit"] = float(args.limit)
         summary["top_k"] = float(args.top_k)
+        summary["include_evidence_tags"] = float(args.include_evidence_tags)
         decisions_out = Path(args.decisions_out)
         decisions_out.parent.mkdir(parents=True, exist_ok=True)
         scored.to_csv(decisions_out, index=False)

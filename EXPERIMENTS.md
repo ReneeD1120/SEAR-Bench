@@ -227,3 +227,37 @@ Interpretation:
 - The `limit=10` tagged 3B robustness run is less favorable: kept candidates underperform dropped candidates on held-out Sharpe.
 - Qwen 1.5B remains too weak for this reasoning task: it ignores tags and continues to mark strong train-strategy candidates as weak.
 - Explanation compliance should become an explicit benchmark metric because Qwen sometimes emits non-allowed reason codes such as `moderate_train_strategy` and can keep candidates while citing weak strategy evidence.
+
+## Pipeline Audit After Factor-Pool Expansion
+
+Concern:
+
+- After expanding the factor pool, derived tags or residual labels could make the LLM follow a hidden decision rule instead of performing reasoning.
+
+Audit result:
+
+- Real-market factor rows do not receive `label_keep`; those labels are only attached in the synthetic path.
+- Formal `sear llm` uses `build_llm_reasoning_view`, not the diagnostic `build_reasoning_view`.
+- The formal LLM view does not expose `label_keep`, `test_ic`, `test_strategy_*`, `decision`, `active_regime`, or `score`.
+- Evaluation joins held-out metrics and rule decisions only after the LLM response is parsed.
+
+Issues found:
+
+- The old `build_reasoning_view` is intentionally diagnostic/leaky and includes held-out metrics and rule decisions.
+- `sear reason` previously defaulted to this leaky diagnostic view, which was easy to misuse.
+- `evidence_tags` are not labels, but they are hand-engineered train-only summaries and can make the LLM follow a tag policy rather than reason over raw structured evidence.
+
+Fix:
+
+- `sear reason` now defaults to the leakage-free numeric LLM view.
+- The leaky view must be requested explicitly with `--diagnostic-leaky`.
+- `sear llm` now defaults to raw numeric train evidence without `evidence_tags`.
+- Tagged evidence must be requested explicitly with `--include-evidence-tags` and should be treated as an ablation.
+- `sear llm` audits the LLM reasoning view and raises an error if forbidden keys such as `test_*`, `label_keep`, `decision`, or `score` appear.
+- Real-market output now writes `real_market_diagnostic_reasoning_view.json` and `real_market_llm_reasoning_view.json` separately.
+
+Interpretation update:
+
+- The earlier tagged Qwen results should be treated as tag-assisted reasoning, not pure LLM reasoning.
+- The clean formal baseline should be rerun with the default numeric-only view.
+- A proper benchmark table should report at least two columns: `numeric-only LLM` and `tag-assisted LLM`.

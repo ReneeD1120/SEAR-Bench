@@ -333,7 +333,7 @@ def _evidence_tags(row: pd.Series, ev: FactorEvidence) -> dict[str, str]:
     }
 
 
-def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, object]:
+def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5, *, include_tags: bool = False) -> dict[str, object]:
     """Build a leakage-free view for LLM decisions.
 
     The LLM sees only train/in-sample structured evidence. Held-out test metrics
@@ -367,27 +367,27 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, o
     rows: list[dict[str, object]] = []
     for idx, row in top.iterrows():
         ev = row["evidence"]
-        rows.append(
-            {
-                "candidate_id": f"C{idx:03d}",
-                "symbol": row["symbol"],
-                "family": row["family"],
-                "factor_name": row["factor_name"],
-                "train_ic": row["train_ic"],
-                "train_ic_ir": ev.ic_ir,
-                "train_win_rate": ev.win_rate,
-                "train_stability": ev.stability,
-                "train_n_obs": ev.n_obs,
-                "train_regime_ic_high_vol": ev.regime_ic_high_vol,
-                "train_regime_ic_low_vol": ev.regime_ic_low_vol,
-                "train_regime_contrast": ev.regime_contrast,
-                "train_strategy_mean_return": row["train_strategy_mean_return"],
-                "train_strategy_sharpe": row["train_strategy_sharpe"],
-                "train_strategy_cum_return": row["train_strategy_cum_return"],
-                "train_strategy_max_drawdown": row["train_strategy_max_drawdown"],
-                "evidence_tags": _evidence_tags(row, ev),
-            }
-        )
+        candidate = {
+            "candidate_id": f"C{idx:03d}",
+            "symbol": row["symbol"],
+            "family": row["family"],
+            "factor_name": row["factor_name"],
+            "train_ic": row["train_ic"],
+            "train_ic_ir": ev.ic_ir,
+            "train_win_rate": ev.win_rate,
+            "train_stability": ev.stability,
+            "train_n_obs": ev.n_obs,
+            "train_regime_ic_high_vol": ev.regime_ic_high_vol,
+            "train_regime_ic_low_vol": ev.regime_ic_low_vol,
+            "train_regime_contrast": ev.regime_contrast,
+            "train_strategy_mean_return": row["train_strategy_mean_return"],
+            "train_strategy_sharpe": row["train_strategy_sharpe"],
+            "train_strategy_cum_return": row["train_strategy_cum_return"],
+            "train_strategy_max_drawdown": row["train_strategy_max_drawdown"],
+        }
+        if include_tags:
+            candidate["evidence_tags"] = _evidence_tags(row, ev)
+        rows.append(candidate)
     return {
         "decision_boundary": "LLM/agent may only read train/in-sample structured evidence. Held-out test metrics are hidden until benchmark evaluation.",
         "family_summary": family_summary.drop(columns=["mean_abs_train_ic"]).to_dict(orient="records"),
@@ -400,9 +400,40 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5) -> dict[str, o
             "base_max_per_symbol": 2,
             "effective_max_per_symbol": top.attrs.get("effective_symbol_cap", 2),
             "held_out_metrics_visible_to_llm": False,
+            "include_evidence_tags": include_tags,
         },
         "top_factors": rows,
     }
+
+
+def audit_llm_reasoning_view(view: dict[str, object]) -> list[str]:
+    """Return forbidden leakage-like keys found in an LLM reasoning view."""
+    forbidden_exact = {
+        "active_regime",
+        "decision",
+        "label_keep",
+        "label_regime",
+        "pred_keep",
+        "pred_regime",
+        "rule_keep",
+        "rule_regime",
+        "score",
+    }
+    findings: list[str] = []
+
+    def visit(value: object, path: str) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                next_path = f"{path}.{key}" if path else str(key)
+                if key in forbidden_exact or key.startswith("test_"):
+                    findings.append(next_path)
+                visit(child, next_path)
+        elif isinstance(value, list):
+            for idx, child in enumerate(value):
+                visit(child, f"{path}[{idx}]")
+
+    visit(view, "")
+    return findings
 
 
 def build_synthetic_dataset(config: SyntheticConfig | None = None) -> pd.DataFrame:
@@ -571,8 +602,12 @@ def run_real_market_experiment(
         table.assign(evidence_json=table["evidence"].map(lambda e: e.to_json())).drop(columns=["evidence"]).to_csv(out / "real_market_factor_table.csv", index=False)
         summarize_family_scores(table).to_csv(out / "real_market_family_summary.csv", index=False)
         summarize_family_ablation(table).to_csv(out / "real_market_family_ablation.csv", index=False)
-        (out / "real_market_reasoning_view.json").write_text(
+        (out / "real_market_diagnostic_reasoning_view.json").write_text(
             json.dumps(build_reasoning_view(table), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        (out / "real_market_llm_reasoning_view.json").write_text(
+            json.dumps(build_llm_reasoning_view(table), indent=2, sort_keys=True),
             encoding="utf-8",
         )
         (out / "real_market_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
