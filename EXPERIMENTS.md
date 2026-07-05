@@ -282,10 +282,14 @@ Qwen2.5-3B result on `qfq.zip`, formula + train sample view:
 | Model | View | Limit | Top K | Candidates | Parse | Match | Valid Sharpe | Keep Rate | Kept Test Sharpe | Dropped Test Sharpe | Kept Test IC | Dropped Test IC | Rule Agreement |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | Qwen2.5-3B | formula + train sample, numeric-only | 5 | 3 | 9 | 1.0 | 1.0 | 1.0 | 0.6667 | 0.2477 | -0.6577 | 0.0282 | -0.0127 | 0.2222 |
+| Qwen2.5-3B | formula + train sample, numeric-only | 5 | 5 | 15 | 1.0 | 1.0 | 1.0 | 0.9333 | -0.1121 | -0.5780 | 0.0167 | 0.0003 | 0.2000 |
 
 Notes:
 
 - Running `limit=5`, `top_k=5`, `max_new_tokens=1536` OOMed after formula and train samples increased prompt length.
-- The successful run used `top_k=3`, so it evaluated 9 candidates.
-- This is the first clean run where the LLM sees factor formulas and train-only factor values, without evidence tags.
-- Kept candidates outperform dropped candidates on held-out Sharpe in this small run, but this needs a larger robustness run after reducing prompt length or sample size.
+- Running `limit=5`, `top_k=5`, `factor_sample_size=3`, `max_new_tokens=1024` produced valid-looking JSON but was truncated at candidate `C011`, so it correctly recorded `parse_success=0.0` and `n_decisions=0.0`.
+- Increasing the same run to `max_new_tokens=2048` completed all 15 candidates.
+- The earlier successful run used `top_k=3`, so it evaluated 9 candidates; the new `top_k=5` run evaluates the full 15-candidate prompt.
+- These are clean runs where the LLM sees factor formulas and train-only factor values, without evidence tags.
+- Kept candidates outperform dropped candidates on held-out Sharpe in both small clean runs, but the `top_k=5` run is overly permissive: it keeps 14 of 15 candidates, emits `active_regime=uncertain` for every candidate, and reuses the same confidence/rationale pattern.
+- The next robustness step is to use a stronger local model or stricter deliberation prompt, then compare numeric-only versus tag-assisted reasoning under the same candidate set.
