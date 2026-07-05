@@ -261,3 +261,31 @@ Interpretation update:
 - The earlier tagged Qwen results should be treated as tag-assisted reasoning, not pure LLM reasoning.
 - The clean formal baseline should be rerun with the default numeric-only view.
 - A proper benchmark table should report at least two columns: `numeric-only LLM` and `tag-assisted LLM`.
+
+## Formula And Train-Sample LLM View
+
+Input change:
+
+- Each `FactorSpec` now includes a readable `formula` string.
+- The clean LLM view now includes `factor_name`, `family`, `formula`, a train-only `train_factor_sample`, and numeric train evidence.
+- The default LLM view still excludes `test_*`, `label_keep`, rule `decision`, `score`, and `evidence_tags`.
+- `evidence_tags` remain an explicit ablation through `--include-evidence-tags`.
+
+Smoke validation:
+
+- `alpha360` still contains `276` factors.
+- Missing formula count is `0`.
+- LLM view audit passes with formula and train-factor samples included.
+
+Qwen2.5-3B result on `qfq.zip`, formula + train sample view:
+
+| Model | View | Limit | Top K | Candidates | Parse | Match | Valid Sharpe | Keep Rate | Kept Test Sharpe | Dropped Test Sharpe | Kept Test IC | Dropped Test IC | Rule Agreement |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Qwen2.5-3B | formula + train sample, numeric-only | 5 | 3 | 9 | 1.0 | 1.0 | 1.0 | 0.6667 | 0.2477 | -0.6577 | 0.0282 | -0.0127 | 0.2222 |
+
+Notes:
+
+- Running `limit=5`, `top_k=5`, `max_new_tokens=1536` OOMed after formula and train samples increased prompt length.
+- The successful run used `top_k=3`, so it evaluated 9 candidates.
+- This is the first clean run where the LLM sees factor formulas and train-only factor values, without evidence tags.
+- Kept candidates outperform dropped candidates on held-out Sharpe in this small run, but this needs a larger robustness run after reducing prompt length or sample size.
