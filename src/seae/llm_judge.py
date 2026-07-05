@@ -34,14 +34,16 @@ Decision protocol:
 - Do not compare against risk-free rates, transaction costs, sectors, or any baseline that is not explicitly present in the structured evidence.
 - If a field is missing, say it is unavailable instead of inferring it.
 - Make one decision for each provided top_factors candidate.
+- The number of decisions must exactly equal candidate_selection.candidate_count.
 - Copy candidate_id exactly from the provided top_factors list.
 - Also copy symbol, factor_name, and family exactly from the same candidate.
 - If you are unsure about a candidate, choose drop rather than inventing a new factor identity.
 - Set global_assessment to exactly one of: mostly_positive, mixed, mostly_negative.
+- Set confidence as your calibrated certainty in [0, 1]; do not copy the schema example blindly.
 - Keep each rationale as 1-3 semicolon-separated reason codes.
 - Allowed reason codes: strong_train_strategy, weak_train_strategy, ic_support, ic_conflict, stable, unstable, drawdown_risk, regime_contrast, sufficient_history, insufficient_history.
 - Do not write prose explanations or restate numeric metrics in rationale.
-- Return JSON only; do not include markdown fences, comments, or trailing text.
+- Return compact JSON only; do not include markdown fences, comments, or trailing text.
 
 Allowed regimes:
 - high_vol
@@ -61,7 +63,7 @@ Return JSON with this exact schema:
       "family": "...",
       "decision": "keep/drop",
       "active_regime": "uncertain",
-      "confidence": 0.0,
+      "confidence": 0.65,
       "rationale": "ic_conflict; strong_train_strategy"
     }}
   ]
