@@ -37,6 +37,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
 5. Build an agent reasoning view:
    - family-level summaries rank the most promising factor families
    - top factor candidates provide `factor_name`, `family`, `formula`, train-only `train_factor_sample`, and train-only statistical evidence
+   - `--factor-sample-size` controls how many train-only factor values are sent to the LLM; use small values for local GPU models
    - the `sear reason` command emits this view as JSON for a downstream LLM agent
    - `sear reason` defaults to the leakage-free version used by `sear llm`
    - `sear reason --diagnostic-leaky` emits the held-out diagnostic view and must not be used as LLM input
@@ -70,7 +71,7 @@ sear synthetic --output-dir outputs
 sear real --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --output-dir outputs
 sear reason --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --top-k 5
 sear llm --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B --dry-run
-sear llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B
+sear llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --factor-sample-size 3 --model Qwen/Qwen3-8B
 ```
 
 ## Interpretation

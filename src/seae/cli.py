@@ -42,6 +42,7 @@ def main() -> None:
     p_reason.add_argument("--top-k", type=int, default=5)
     p_reason.add_argument("--diagnostic-leaky", action="store_true")
     p_reason.add_argument("--include-evidence-tags", action="store_true")
+    p_reason.add_argument("--factor-sample-size", type=int, default=6)
     p_llm = sub.add_parser("llm")
     p_llm.add_argument("--zip-path", required=True)
     p_llm.add_argument("--limit", type=int, default=10)
@@ -61,6 +62,7 @@ def main() -> None:
     p_llm.add_argument("--summary-out", default="outputs/llm_summary.json")
     p_llm.add_argument("--dry-run", action="store_true")
     p_llm.add_argument("--include-evidence-tags", action="store_true")
+    p_llm.add_argument("--factor-sample-size", type=int, default=6)
     args = parser.parse_args()
     if args.cmd == "synthetic":
         config = SyntheticConfig(n_assets=args.n_assets, n_days=args.n_days, seed=args.seed)
@@ -92,12 +94,22 @@ def main() -> None:
         view = (
             build_reasoning_view(table, top_k=args.top_k)
             if args.diagnostic_leaky
-            else build_llm_reasoning_view(table, top_k=args.top_k, include_tags=args.include_evidence_tags)
+            else build_llm_reasoning_view(
+                table,
+                top_k=args.top_k,
+                include_tags=args.include_evidence_tags,
+                factor_sample_size=args.factor_sample_size,
+            )
         )
         print(json.dumps(view, indent=2, sort_keys=True))
     elif args.cmd == "llm":
         table, _, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=None)
-        view = build_llm_reasoning_view(table, top_k=args.top_k, include_tags=args.include_evidence_tags)
+        view = build_llm_reasoning_view(
+            table,
+            top_k=args.top_k,
+            include_tags=args.include_evidence_tags,
+            factor_sample_size=args.factor_sample_size,
+        )
         leakage_findings = audit_llm_reasoning_view(view)
         if leakage_findings:
             raise RuntimeError(f"LLM reasoning view contains forbidden leakage keys: {leakage_findings}")
@@ -152,6 +164,7 @@ def main() -> None:
         summary["limit"] = float(args.limit)
         summary["top_k"] = float(args.top_k)
         summary["include_evidence_tags"] = float(args.include_evidence_tags)
+        summary["factor_sample_size"] = float(args.factor_sample_size)
         decisions_out = Path(args.decisions_out)
         decisions_out.parent.mkdir(parents=True, exist_ok=True)
         scored.to_csv(decisions_out, index=False)

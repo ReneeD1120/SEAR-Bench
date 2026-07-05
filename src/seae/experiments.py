@@ -78,7 +78,7 @@ def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, tuple[str
     return out
 
 
-def _train_factor_sample(df: pd.DataFrame, factor: pd.Series, *, split_ratio: float = 0.7, n: int = 12) -> list[dict[str, object]]:
+def _train_factor_sample(df: pd.DataFrame, factor: pd.Series, *, split_ratio: float = 0.7, n: int = 6) -> list[dict[str, object]]:
     cutoff = int(len(df) * split_ratio)
     dates = df.iloc[:cutoff]["date"] if "date" in df.columns else pd.Series(range(cutoff), index=df.index[:cutoff])
     sample = pd.DataFrame({"date": dates, "value": factor.iloc[:cutoff]}).replace([np.inf, -np.inf], np.nan).dropna().tail(n)
@@ -353,7 +353,21 @@ def _evidence_tags(row: pd.Series, ev: FactorEvidence) -> dict[str, str]:
     }
 
 
-def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5, *, include_tags: bool = False) -> dict[str, object]:
+def _trim_factor_sample(sample: object, *, n: int) -> list[dict[str, object]]:
+    if not isinstance(sample, list):
+        return []
+    if n <= 0:
+        return []
+    return sample[-n:]
+
+
+def build_llm_reasoning_view(
+    table: pd.DataFrame,
+    top_k: int = 5,
+    *,
+    include_tags: bool = False,
+    factor_sample_size: int = 6,
+) -> dict[str, object]:
     """Build a leakage-free view for LLM decisions.
 
     The LLM sees only train/in-sample structured evidence. Held-out test metrics
@@ -393,7 +407,7 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5, *, include_tag
             "family": row["family"],
             "factor_name": row["factor_name"],
             "formula": row.get("formula", ""),
-            "train_factor_sample": row.get("train_factor_sample", []),
+            "train_factor_sample": _trim_factor_sample(row.get("train_factor_sample", []), n=factor_sample_size),
             "train_ic": row["train_ic"],
             "train_ic_ir": ev.ic_ir,
             "train_win_rate": ev.win_rate,
@@ -423,6 +437,7 @@ def build_llm_reasoning_view(table: pd.DataFrame, top_k: int = 5, *, include_tag
             "effective_max_per_symbol": top.attrs.get("effective_symbol_cap", 2),
             "held_out_metrics_visible_to_llm": False,
             "include_evidence_tags": include_tags,
+            "factor_sample_size": factor_sample_size,
         },
         "top_factors": rows,
     }
