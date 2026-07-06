@@ -492,6 +492,35 @@ def run_synthetic_experiment(
             }
         )
     pred = pd.DataFrame(pred_rows)
+    label_keep = pred["label_keep"].astype(int)
+    pred_keep = pred["pred_keep"].astype(int)
+    rule_keep = pred["rule_keep"].astype(int)
+
+    def binary_metrics(y_true: pd.Series, y_pred: pd.Series, *, prefix: str) -> dict[str, float]:
+        tp = int(((y_true == 1) & (y_pred == 1)).sum())
+        tn = int(((y_true == 0) & (y_pred == 0)).sum())
+        fp = int(((y_true == 0) & (y_pred == 1)).sum())
+        fn = int(((y_true == 1) & (y_pred == 0)).sum())
+        positive = tp + fn
+        negative = tn + fp
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / positive if positive else float("nan")
+        specificity = tn / negative if negative else float("nan")
+        if np.isfinite(recall) and np.isfinite(specificity):
+            balanced = 0.5 * (recall + specificity)
+        else:
+            balanced = float("nan")
+        return {
+            f"{prefix}_precision": float(precision),
+            f"{prefix}_recall": float(recall),
+            f"{prefix}_specificity": float(specificity),
+            f"{prefix}_balanced_accuracy": float(balanced),
+            f"{prefix}_tp": float(tp),
+            f"{prefix}_tn": float(tn),
+            f"{prefix}_fp": float(fp),
+            f"{prefix}_fn": float(fn),
+        }
+
     keep_acc = float((pred["label_keep"] == pred["pred_keep"]).mean())
     regime_acc = float((pred["label_regime"] == pred["pred_regime"]).mean())
     rule_keep_acc = float((pred["label_keep"] == pred["rule_keep"]).mean())
@@ -519,6 +548,8 @@ def run_synthetic_experiment(
         "rule_mean_test_strategy_sharpe_dropped": rule_dropped_strategy_sharpe,
         "n_test_samples": float(len(pred)),
     }
+    summary.update(binary_metrics(label_keep, pred_keep, prefix="keep"))
+    summary.update(binary_metrics(label_keep, rule_keep, prefix="rule_keep"))
     if output_dir is not None:
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)

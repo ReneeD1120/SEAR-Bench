@@ -314,3 +314,39 @@ Validation:
 - Default LLM view: `has_family=False`, `has_family_summary=False`.
 - Ablation view with flags: `has_family=True`, `has_family_summary=True`.
 - Example synthetic labels after the fix: `momentum_20d=keep`, `reversal_5d=keep`, `volume_surge=keep`, while `mom_20d`, `volume_ratio_20`, and `noise_factor` are not automatically kept.
+
+## Family-Blind End-to-End Runs
+
+Synthetic benchmark after family-label fix:
+
+- Command: `sear synthetic --output-dir outputs\family_blind_synthetic_default`.
+- `n_test_samples=10116`.
+- `keep_accuracy=0.9893`, but the learned judge keeps no positive factors, so kept-test metrics are `NaN`.
+- Interpretation: after removing family-level labels, plain accuracy is dominated by the many inactive expanded factors and is no longer sufficient.
+- Metric fix: synthetic summaries now include keep precision, recall, specificity, balanced accuracy, and confusion-matrix counts for both learned and rule judges.
+
+Real-market benchmark on `qfq.zip`, `limit=10`:
+
+- Command: `sear real --zip-path data\qfq.zip --limit 10 --output-dir outputs\family_blind_real_l10`.
+- `n_symbols=10`, `n_factor_rows=2760`.
+- `avg_test_ic=-0.0660`.
+- `keep_rate=0.1141`.
+- `avg_test_strategy_sharpe=0.2973`.
+- `avg_test_strategy_sharpe_kept=0.7892`.
+- `avg_test_strategy_sharpe_dropped=0.2431`.
+- Interpretation: the non-LLM rule baseline still separates higher held-out Sharpe candidates on this real-market slice.
+
+Family-blind Qwen results on `qfq.zip`, `limit=5`:
+
+| Model | Top K | Candidates | Sample | Parse | Match | Keep Rate | Kept Test Sharpe | Dropped Test Sharpe | Kept Test IC | Dropped Test IC | Rule Agreement | Notes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Qwen2.5-3B-Instruct | 5 | 15 | 3 | 1.0 | 1.0 | 0.5333 | -0.0746 | -0.2215 | 0.0067 | 0.0259 | 0.4667 | family-blind baseline; still template-like confidence/regime |
+| Qwen2.5-7B-Instruct | 5 | 15 | 3 | failed | failed | NaN | NaN | NaN | NaN | NaN | NaN | OOM during generation |
+| Qwen2.5-7B-Instruct | 3 | 9 | 1 | 1.0 | 1.0 | 1.0000 | -0.0541 | NaN | 0.0146 | NaN | 0.1111 | smaller run completed but kept all candidates |
+
+Interpretation:
+
+- Removing `family` materially changed Qwen2.5-3B behavior: keep rate fell from `0.9333` in the family-exposed run to `0.5333` in the family-blind run.
+- The family-blind 3B run still shows weak positive Sharpe separation, but it does not improve held-out IC separation.
+- Explanation quality remains weak: Qwen2.5-3B repeats `confidence=0.65` and `active_regime=uncertain` for every candidate.
+- Qwen2.5-7B is not automatically better under the current prompt: full 15-candidate inference OOMs, and the smaller 9-candidate run degenerates to all-keep.

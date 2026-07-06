@@ -51,7 +51,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - `--include-evidence-tags` enables a tag-assisted ablation; it is not the default formal reasoning view.
    - `--include-family` and `--include-family-summary` enable family-assisted ablations; they are not the default formal reasoning view.
 7. Evaluate:
-   - synthetic: keep accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
+   - synthetic: keep accuracy, keep precision/recall/balanced accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
    - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown
    - LLM: kept vs dropped test IC/Sharpe, rule agreement, and synthetic label accuracy when labels exist
 
