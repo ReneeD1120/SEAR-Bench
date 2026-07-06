@@ -67,6 +67,17 @@ def main() -> None:
     p_llm.add_argument("--factor-sample-size", type=int, default=6)
     p_llm.add_argument("--include-family", action="store_true")
     p_llm.add_argument("--include-family-summary", action="store_true")
+    p_score = sub.add_parser("score-response")
+    p_score.add_argument("--zip-path", required=True)
+    p_score.add_argument("--response-in", required=True)
+    p_score.add_argument("--limit", type=int, default=10)
+    p_score.add_argument("--top-k", type=int, default=5)
+    p_score.add_argument("--include-evidence-tags", action="store_true")
+    p_score.add_argument("--factor-sample-size", type=int, default=6)
+    p_score.add_argument("--include-family", action="store_true")
+    p_score.add_argument("--include-family-summary", action="store_true")
+    p_score.add_argument("--decisions-out", default="outputs/llm_scored_decisions.csv")
+    p_score.add_argument("--summary-out", default="outputs/llm_scored_summary.json")
     args = parser.parse_args()
     if args.cmd == "synthetic":
         config = SyntheticConfig(n_assets=args.n_assets, n_days=args.n_days, seed=args.seed)
@@ -184,6 +195,43 @@ def main() -> None:
         print(f"prompt_written={prompt_out}")
         print(f"response_written={response_out}")
         print(f"raw_response_written={raw_out}")
+        print(f"decisions_written={decisions_out}")
+        print(f"summary_written={summary_out}")
+        print(summary)
+    elif args.cmd == "score-response":
+        table, _, _ = run_real_market_experiment(args.zip_path, limit=args.limit, output_dir=None)
+        view = build_llm_reasoning_view(
+            table,
+            top_k=args.top_k,
+            include_tags=args.include_evidence_tags,
+            factor_sample_size=args.factor_sample_size,
+            include_family=args.include_family,
+            include_family_summary=args.include_family_summary,
+        )
+        leakage_findings = audit_llm_reasoning_view(view)
+        if leakage_findings:
+            raise RuntimeError(f"LLM reasoning view contains forbidden leakage keys: {leakage_findings}")
+        content = Path(args.response_in).read_text(encoding="utf-8")
+        try:
+            response = json.loads(content)
+        except json.JSONDecodeError:
+            response = parse_llm_json(content)
+        decisions = normalize_llm_decisions(response)
+        scored, summary = evaluate_llm_decisions(table, decisions, reasoning_view=view)
+        summary["parse_success"] = 1.0
+        summary["response_in"] = str(args.response_in)
+        summary["limit"] = float(args.limit)
+        summary["top_k"] = float(args.top_k)
+        summary["include_evidence_tags"] = float(args.include_evidence_tags)
+        summary["factor_sample_size"] = float(args.factor_sample_size)
+        summary["include_family"] = float(args.include_family)
+        summary["include_family_summary"] = float(args.include_family_summary)
+        decisions_out = Path(args.decisions_out)
+        decisions_out.parent.mkdir(parents=True, exist_ok=True)
+        scored.to_csv(decisions_out, index=False)
+        summary_out = Path(args.summary_out)
+        summary_out.parent.mkdir(parents=True, exist_ok=True)
+        summary_out.write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         print(f"decisions_written={decisions_out}")
         print(f"summary_written={summary_out}")
         print(summary)

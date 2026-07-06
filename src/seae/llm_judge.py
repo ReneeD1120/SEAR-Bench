@@ -311,6 +311,32 @@ def _expected_regime(row: pd.Series, *, min_contrast: float = 0.02) -> str:
     return "high_vol" if abs(high_value) > abs(low_value) else "low_vol"
 
 
+def _decision_conflicts_with_logic(decision: object, logic: object) -> bool:
+    text = str(logic).lower()
+    decision_text = str(decision).lower()
+    negative_phrases = [
+        "lack of utility",
+        "not useful",
+        "suggest caution",
+        "suggests caution",
+        "not consistently",
+        "drop",
+    ]
+    positive_phrases = [
+        "suggest utility",
+        "suggests utility",
+        "justify keeping",
+        "justifies keeping",
+        "supports keep",
+        "supports keeping",
+    ]
+    if decision_text == "keep":
+        return any(phrase in text for phrase in negative_phrases)
+    if decision_text == "drop":
+        return any(phrase in text for phrase in positive_phrases)
+    return False
+
+
 def add_explanation_faithfulness(scored: pd.DataFrame) -> pd.DataFrame:
     """Attach heuristic faithfulness checks for structured LLM evidence audits."""
     if scored.empty:
@@ -335,12 +361,9 @@ def add_explanation_faithfulness(scored: pd.DataFrame) -> pd.DataFrame:
     out["faith_regime_ok"] = (out["faith_expected_regime"] == "uncertain") | (
         out["llm_active_regime"] == out["faith_expected_regime"]
     )
-    out["faith_decision_conflict"] = (
-        (out["llm_decision"] == "keep")
-        & out["llm_decision_logic"].fillna("").astype(str).str.lower().str.contains("lack|not|caution|drop|negative")
-    ) | (
-        (out["llm_decision"] == "drop")
-        & out["llm_decision_logic"].fillna("").astype(str).str.lower().str.contains("useful|utility|keep|strong")
+    out["faith_decision_conflict"] = out.apply(
+        lambda row: _decision_conflicts_with_logic(row["llm_decision"], row["llm_decision_logic"]),
+        axis=1,
     )
     out["faithfulness_ok"] = (
         out["faith_support_polarity_ok"]
