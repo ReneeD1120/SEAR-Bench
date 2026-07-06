@@ -148,6 +148,7 @@ Rules:
 - If issue is evidence_quote_invalid_metric, replace invalid metric names with exact train metric keys.
 - If issue is evidence_quote_value_mismatch, copy/round the value from Structured evidence.
 - If issue is evidence_quote_missing_roles, include both support and counter evidence when available.
+- If issue is forbidden_response_reference, remove all mentions of held-out/test metrics, labels, rule decisions, raw prices, and unavailable baselines.
 - Keep evidence_audit fields concise, at most 12 words each.
 - Return compact JSON only.
 
@@ -367,9 +368,32 @@ TRAIN_EVIDENCE_METRICS = {
 }
 
 
+FORBIDDEN_RESPONSE_PATTERNS = [
+    "test_ic",
+    "test_strategy",
+    "held-out",
+    "held out",
+    "out-of-sample",
+    "out of sample",
+    "label_keep",
+    "label_regime",
+    "rule decision",
+    "rule_decision",
+    "raw price",
+    "raw return",
+    "risk-free",
+    "risk free",
+]
+
+
 def _count_terms(text: object, terms: set[str]) -> int:
     tokens = re.findall(r"[a-z_]+", str(text).lower())
     return sum(1 for token in tokens if token in terms)
+
+
+def _contains_forbidden_response_reference(*values: object) -> bool:
+    text = " ".join(str(value).lower() for value in values if value is not None)
+    return any(pattern in text for pattern in FORBIDDEN_RESPONSE_PATTERNS)
 
 
 def _parse_evidence_quotes(value: object) -> list[dict[str, object]]:
@@ -517,6 +541,18 @@ def add_explanation_faithfulness(scored: pd.DataFrame) -> pd.DataFrame:
         lambda row: _decision_conflicts_with_logic(row["llm_decision"], row["llm_decision_logic"]),
         axis=1,
     )
+    out["faith_forbidden_reference"] = out.apply(
+        lambda row: _contains_forbidden_response_reference(
+            row.get("llm_formula_hypothesis", ""),
+            row.get("llm_support_summary", ""),
+            row.get("llm_counter_evidence", ""),
+            row.get("llm_regime_summary", ""),
+            row.get("llm_decision_logic", ""),
+            row.get("llm_evidence_quotes", ""),
+            row.get("llm_rationale", ""),
+        ),
+        axis=1,
+    )
     if "llm_evidence_quotes" in out.columns:
         quote_diag = out.apply(_quote_diagnostics, axis=1, result_type="expand")
         out = pd.concat([out, quote_diag], axis=1)
@@ -530,6 +566,7 @@ def add_explanation_faithfulness(scored: pd.DataFrame) -> pd.DataFrame:
         & out["quote_grounded_ok"]
         & out["quote_role_coverage_ok"]
         & ~out["faith_decision_conflict"]
+        & ~out["faith_forbidden_reference"]
     )
     return out
 
@@ -607,6 +644,10 @@ def critique_response_against_view(
         if _decision_conflicts_with_logic(decision.get("llm_decision", ""), audit_fields["decision_logic"]):
             issues.append("decision_logic_conflict")
             suggestions.append("Decision logic contradicts keep/drop; rewrite it or change the decision.")
+
+        if _contains_forbidden_response_reference(*audit_fields.values(), decision.get("llm_evidence_quotes", "")):
+            issues.append("forbidden_response_reference")
+            suggestions.append("Remove references to held-out/test metrics, labels, rule decisions, raw prices, or unavailable baselines.")
 
         quote_diag = _quote_diagnostics(pd.concat([candidate, pd.Series(decision)]))
         if float(quote_diag["quote_count"]) < 3:
@@ -788,6 +829,7 @@ def evaluate_llm_decisions(
         "faith_counter_polarity_ok",
         "faith_regime_ok",
         "faith_decision_conflict",
+        "faith_forbidden_reference",
         "quote_grounded_ok",
         "quote_role_coverage_ok",
         "faithfulness_ok",

@@ -49,6 +49,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - `evidence_audit` contains formula hypothesis, support summary, counter-evidence, regime summary, and decision logic for each candidate.
    - `evidence_quotes` binds each explanation to concrete train-only metric names and values.
    - Quote grounding is scored separately: valid metric names, numeric value matches, support/counter role coverage, and overall grounded quote rate.
+   - The critic also rejects response text that references unavailable evidence such as held-out/test metrics, hidden labels, rule decisions, raw prices, or external baselines.
    - The LLM can inspect factor names, formulas, train-only factor samples, and train-only evidence.
    - The LLM still cannot inspect raw prices, hidden labels, rule decisions, or held-out test metrics.
    - `--include-evidence-tags` enables a tag-assisted ablation; it is not the default formal reasoning view.

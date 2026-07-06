@@ -535,3 +535,13 @@ Research implication:
 - The next strong-reasoning experiment should compare model sizes under this evidence-bound protocol.
 - A credible AAAI benchmark table should report decision quality, explanation faithfulness, and portfolio performance together.
 - Qwen2.5-3B should be presented as a weak open-source baseline, not as the final strong-reasoning result.
+
+Leakage regression check:
+
+- Formal family-blind LLM view on `前复权.zip`, `limit=3`, `top_k=2` produced `formal_findings=[]`.
+- Formal candidate keys contain only candidate identity, formula, train factor samples, and train-only metrics.
+- Formal candidate keys do not contain `test_*`, `label_*`, `decision`, `active_regime`, `score`, `family`, or `family_summary`.
+- The diagnostic/leaky view on the same data produced `36` audit findings, including `test_ic`, `test_strategy_*`, and rule `decision`, confirming the audit catches the intentionally leaky path.
+- An adversarial response with `evidence_quotes.metric=test_ic` was rejected with `forbidden_response_reference`, `evidence_quote_invalid_metric`, `evidence_quote_value_mismatch`, and `evidence_quote_missing_roles`.
+- An adversarial response that only mentioned `held-out test Sharpe` in natural-language audit text was rejected with `forbidden_response_reference`.
+- A compliant evidence-bound response with exact train metric names and values passed the critic with `pass_rate=1.0` and `faithfulness_ok_rate=1.0`.
