@@ -128,7 +128,11 @@ Rules:
 - Do not use held-out test metrics; none are provided.
 - Preserve candidate_id, symbol, and factor_name exactly.
 - Return the same agentic_evidence_audit_v1 JSON schema.
-- Fix every critic issue when the structured evidence supports the fix.
+- Treat critic issues as mandatory repair instructions.
+- If issue is support_summary_negative, rewrite support_summary using only positive train evidence such as high train strategy Sharpe, stability, sufficient history, or favorable IC.
+- If issue is counter_evidence_positive, rewrite counter_evidence using only risks such as negative IC, low win rate, drawdown, weak stability, or conflicting evidence.
+- If issue is regime_mismatch and expected_regime is high_vol or low_vol, set active_regime to that expected_regime unless the structured evidence is missing.
+- If issue is decision_logic_conflict, either change keep/drop or rewrite decision_logic so it matches the decision.
 - Keep evidence_audit fields concise, at most 12 words each.
 - Return compact JSON only.
 
