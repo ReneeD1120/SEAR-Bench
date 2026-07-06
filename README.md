@@ -43,3 +43,25 @@ The LLM/agent layer is not allowed to generate hidden labels or inspect raw pric
 For formal LLM evaluation, `sear llm` uses a leakage-free view: the model sees only factor formulas, train/in-sample factor samples, and train/in-sample structured evidence. Held-out test IC, strategy metrics, hidden labels, and rule decisions are hidden until benchmark scoring. Use `sear reason` to inspect the exact default LLM input view. Use `--include-evidence-tags` only for tag-assisted ablations.
 
 Current default real-data factor bank is `alpha1000`, which contains `1772` readable factor formulas/names. Use `--candidate-count` to control how many factor-symbol candidates are sent to the LLM. For stronger open-source reasoning, prefer a persistent vLLM/OpenAI-compatible Qwen2.5-7B, Qwen3-8B, or larger Qwen server over repeatedly loading Hugging Face models inside one-shot CLI calls.
+
+For a Linux/WSL GPU server with vLLM installed, start Qwen 14B as an OpenAI-compatible endpoint:
+
+```bash
+bash scripts/run_qwen14b_vllm.sh
+```
+
+Then run SEAR-Bench against it:
+
+```bash
+sear llm \
+  --backend openai-compatible \
+  --base-url http://127.0.0.1:8000/v1 \
+  --model Qwen/Qwen2.5-14B-Instruct \
+  --zip-path /Users/renee/Downloads/RAFPO/前复权.zip \
+  --limit 3 \
+  --candidate-count 12 \
+  --factor-sample-size 1 \
+  --max-new-tokens 4096
+```
+
+On the current Windows lab machine, vLLM tensor parallel is blocked unless WSL/Linux or Docker is installed. Use `TENSOR_PARALLEL_SIZE=2` for Qwen 14B; TP=3 is often incompatible with 14B attention-head partitioning.
