@@ -384,3 +384,23 @@ Interpretation:
 
 - Future agentic-reasoning results should be evaluated on both held-out financial metrics and these explanation diagnostics.
 - The older compact-rationale Qwen results remain useful baselines, but should not be presented as strong agentic reasoning.
+
+First bounded agentic-audit run:
+
+- Command: `sear llm --backend hf-local --zip-path data\qfq.zip --limit 5 --top-k 3 --factor-sample-size 2 --model Qwen/Qwen2.5-3B-Instruct --hf-device-map auto --max-new-tokens 2048`.
+- Output files: `outputs\qwen25_3b_agentic_bounded_*_l5_t3_s2_2048.*`.
+- `parse_success=1.0`, `n_decisions=9`, `match_rate=1.0`.
+- `keep_rate=0.3333`.
+- `mean_test_ic_kept=0.0333`, `mean_test_ic_dropped=0.0052`.
+- `mean_test_strategy_sharpe_kept=0.0036`, `mean_test_strategy_sharpe_dropped=-0.0830`.
+- `confidence_unique_count=5`, `confidence_std=0.3029`.
+- `non_uncertain_regime_rate=1.0`, `regime_unique_count=3`.
+- `evidence_audit_nonempty_rate=1.0`, `evidence_audit_unique_rate=1.0`.
+- Field-level audit uniqueness is high for formula/support/counter-evidence, but lower for regime and decision logic.
+
+Interpretation update:
+
+- The bounded agentic-audit protocol fixes the previous template failure: confidence varies, regimes are not all uncertain, and every candidate has a structured audit.
+- Held-out selection is directionally better in this small run: kept candidates beat dropped candidates on both test IC and test Sharpe.
+- Explanation faithfulness is still imperfect: Qwen sometimes places supportive evidence in `counter_evidence` or negative evidence in `support_summary`.
+- The next benchmark component should be an automatic explanation-faithfulness checker that validates whether support/counter/regime statements are consistent with the structured numeric fields.
