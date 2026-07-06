@@ -404,3 +404,45 @@ Interpretation update:
 - Held-out selection is directionally better in this small run: kept candidates beat dropped candidates on both test IC and test Sharpe.
 - Explanation faithfulness is still imperfect: Qwen sometimes places supportive evidence in `counter_evidence` or negative evidence in `support_summary`.
 - The next benchmark component should be an automatic explanation-faithfulness checker that validates whether support/counter/regime statements are consistent with the structured numeric fields.
+
+Explanation-faithfulness checker:
+
+- Added a deterministic scorer for structured audit fields.
+- It checks whether `support_summary` is positive-evidence aligned, `counter_evidence` is negative-evidence aligned, predicted regime agrees with train high/low-vol IC contrast, and decision logic does not contradict keep/drop.
+- Added `score-response` so existing LLM responses can be rescored without rerunning generation.
+
+Rescored bounded agentic-audit run (`top_k=3`, 9 candidates):
+
+- Response: `outputs\qwen25_3b_agentic_faith_response_l5_t3_s2_2048.json`.
+- Rescored summary: `outputs\qwen25_3b_agentic_faith_rescored_summary_l5_t3_s2_2048.json`.
+- `faith_support_polarity_ok_rate=0.5556`.
+- `faith_counter_polarity_ok_rate=0.4444`.
+- `faith_regime_ok_rate=0.5556`.
+- `faith_decision_conflict_rate=0.0000`.
+- `faithfulness_ok_rate=0.4444`.
+
+Larger bounded agentic-audit run (`top_k=5`, 15 candidates):
+
+- Command: `sear llm --backend hf-local --zip-path data\qfq.zip --limit 5 --top-k 5 --factor-sample-size 1 --model Qwen/Qwen2.5-3B-Instruct --hf-device-map auto --max-new-tokens 4096`.
+- Output files: `outputs\qwen25_3b_agentic_faith_*_l5_t5_s1_4096.*`.
+- `parse_success=1.0`, `n_decisions=15`, `match_rate=1.0`.
+- `keep_rate=0.5333`.
+- `mean_test_ic_kept=0.0067`, `mean_test_ic_dropped=0.0259`.
+- `mean_test_strategy_sharpe_kept=-0.0746`, `mean_test_strategy_sharpe_dropped=-0.2215`.
+- `confidence_unique_count=2`, `confidence_std=0.2993`.
+- `non_uncertain_regime_rate=1.0`, `regime_unique_count=3`.
+- `evidence_audit_nonempty_rate=1.0`, `evidence_audit_unique_rate=1.0`.
+- `faith_support_polarity_ok_rate=1.0000`.
+- `faith_counter_polarity_ok_rate=0.9333`.
+- `faith_regime_ok_rate=0.5333`.
+- `faith_decision_conflict_rate=0.0000`.
+- `faithfulness_ok_rate=0.4667`.
+- `llm_decision_logic_unique_rate=0.2667`, suggesting residual template behavior in final decision explanations.
+
+Current interpretation:
+
+- The agentic-audit protocol fixes the most obvious template failure: outputs parse, include candidate-specific audits, use multiple regimes, and expose confidence variation.
+- On held-out strategy Sharpe, Qwen2.5-3B still separates kept from dropped candidates in the right direction.
+- On held-out IC, the larger run is unfavorable: dropped candidates have higher mean test IC than kept candidates.
+- Explanation faithfulness remains the main blocker for claiming strong reasoning: overall faithfulness is only about `44%-47%`.
+- The next step should compare stronger models under the same family-blind agentic-audit protocol and report both financial selection metrics and faithfulness metrics.
