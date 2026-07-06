@@ -13,10 +13,12 @@ from .experiments import (
     run_synthetic_experiment,
 )
 from .llm_judge import (
+    build_revision_messages,
     build_llm_messages,
     call_huggingface_local_chat,
     call_openai_compatible_chat,
     config_from_env,
+    critique_response_against_view,
     evaluate_llm_decisions,
     normalize_llm_decisions,
     parse_llm_json,
@@ -68,6 +70,9 @@ def main() -> None:
     p_llm.add_argument("--factor-sample-size", type=int, default=6)
     p_llm.add_argument("--include-family", action="store_true")
     p_llm.add_argument("--include-family-summary", action="store_true")
+    p_llm.add_argument("--revision-rounds", type=int, default=0)
+    p_llm.add_argument("--initial-response-out", default=None)
+    p_llm.add_argument("--critic-out", default=None)
     p_score = sub.add_parser("score-response")
     p_score.add_argument("--zip-path", required=True)
     p_score.add_argument("--response-in", required=True)
@@ -159,11 +164,12 @@ def main() -> None:
             timeout=args.timeout,
             max_new_tokens=args.max_new_tokens,
         )
-        if args.backend == "openai-compatible":
-            raw = call_openai_compatible_chat(messages, config)
-        else:
-            raw = call_huggingface_local_chat(
-                messages,
+
+        def call_model(current_messages: list[dict[str, str]]) -> str:
+            if args.backend == "openai-compatible":
+                return call_openai_compatible_chat(current_messages, config)
+            return call_huggingface_local_chat(
+                current_messages,
                 model=args.model,
                 temperature=args.temperature,
                 max_new_tokens=args.max_new_tokens,
@@ -171,10 +177,11 @@ def main() -> None:
                 torch_dtype=args.hf_torch_dtype,
                 trust_remote_code=args.trust_remote_code,
             )
+
+        raw = call_model(messages)
         response_out = Path(args.response_out)
         response_out.parent.mkdir(parents=True, exist_ok=True)
         raw_out = response_out.with_suffix(response_out.suffix + ".raw.txt")
-        raw_out.write_text(raw, encoding="utf-8")
         try:
             response = parse_llm_json(raw)
             parse_success = True
@@ -186,6 +193,39 @@ def main() -> None:
                 "decisions": [],
             }
             parse_success = False
+        if args.initial_response_out:
+            initial_response_out = Path(args.initial_response_out)
+            initial_response_out.parent.mkdir(parents=True, exist_ok=True)
+            initial_response_out.write_text(json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+
+        critic_feedback = critique_response_against_view(view, response) if parse_success else {}
+        revision_rounds_completed = 0
+        for _ in range(max(0, args.revision_rounds)):
+            critic_summary = critic_feedback.get("summary", {}) if isinstance(critic_feedback, dict) else {}
+            if not parse_success or float(critic_summary.get("n_failed", 1.0)) <= 0.0:
+                break
+            revision_messages = build_revision_messages(view, response, critic_feedback)
+            raw = call_model(revision_messages)
+            try:
+                response = parse_llm_json(raw)
+                parse_success = True
+            except json.JSONDecodeError as exc:
+                response = {
+                    "model_role": "structured_evidence_reasoner",
+                    "global_assessment": "parse_failed",
+                    "parse_error": str(exc),
+                    "decisions": [],
+                }
+                parse_success = False
+                break
+            revision_rounds_completed += 1
+            critic_feedback = critique_response_against_view(view, response)
+
+        if args.critic_out:
+            critic_out = Path(args.critic_out)
+            critic_out.parent.mkdir(parents=True, exist_ok=True)
+            critic_out.write_text(json.dumps(critic_feedback, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        raw_out.write_text(raw, encoding="utf-8")
         response_out.write_text(json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         decisions = normalize_llm_decisions(response)
         scored, summary = evaluate_llm_decisions(table, decisions, reasoning_view=view)
@@ -198,6 +238,12 @@ def main() -> None:
         summary["factor_sample_size"] = float(args.factor_sample_size)
         summary["include_family"] = float(args.include_family)
         summary["include_family_summary"] = float(args.include_family_summary)
+        summary["revision_rounds_requested"] = float(args.revision_rounds)
+        summary["revision_rounds_completed"] = float(revision_rounds_completed)
+        if isinstance(critic_feedback, dict) and "summary" in critic_feedback:
+            critic_summary = critic_feedback["summary"]
+            summary["critic_pass_rate"] = float(critic_summary.get("pass_rate", float("nan")))
+            summary["critic_n_failed"] = float(critic_summary.get("n_failed", float("nan")))
         decisions_out = Path(args.decisions_out)
         decisions_out.parent.mkdir(parents=True, exist_ok=True)
         scored.to_csv(decisions_out, index=False)

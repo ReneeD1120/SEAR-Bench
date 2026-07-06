@@ -111,6 +111,42 @@ def build_llm_messages(reasoning_view: dict[str, object]) -> list[dict[str, str]
     ]
 
 
+def build_revision_messages(
+    reasoning_view: dict[str, object],
+    previous_response: dict[str, object],
+    critic_feedback: dict[str, object],
+) -> list[dict[str, str]]:
+    clean_view = _finite_json_value(reasoning_view)
+    clean_response = _finite_json_value(previous_response)
+    clean_feedback = _finite_json_value(critic_feedback)
+    evidence_json = json.dumps(clean_view, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    response_json = json.dumps(clean_response, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    feedback_json = json.dumps(clean_feedback, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    revision_prompt = f"""Revise your previous SEAR-Bench decisions using only train-only structured evidence and critic feedback.
+
+Rules:
+- Do not use held-out test metrics; none are provided.
+- Preserve candidate_id, symbol, and factor_name exactly.
+- Return the same agentic_evidence_audit_v1 JSON schema.
+- Fix every critic issue when the structured evidence supports the fix.
+- Keep evidence_audit fields concise, at most 12 words each.
+- Return compact JSON only.
+
+Structured evidence:
+{evidence_json}
+
+Previous response:
+{response_json}
+
+Train-only critic feedback:
+{feedback_json}
+"""
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": revision_prompt},
+    ]
+
+
 def write_prompt(messages: list[dict[str, str]], output_path: str | Path) -> None:
     Path(output_path).write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -372,6 +408,106 @@ def add_explanation_faithfulness(scored: pd.DataFrame) -> pd.DataFrame:
         & ~out["faith_decision_conflict"]
     )
     return out
+
+
+def critique_response_against_view(
+    reasoning_view: dict[str, object],
+    response: dict[str, object],
+) -> dict[str, object]:
+    """Critique an LLM response using only the leakage-free reasoning view."""
+    candidates = candidate_frame_from_view(reasoning_view)
+    decisions = normalize_llm_decisions(response)
+    feedback_rows: list[dict[str, object]] = []
+    if candidates.empty:
+        return {
+            "critic_role": "train_only_evidence_critic",
+            "held_out_metrics_visible": False,
+            "summary": {"n_candidates": 0.0, "n_failed": 0.0, "pass_rate": float("nan")},
+            "feedback": feedback_rows,
+        }
+
+    decision_map = (
+        decisions.drop_duplicates("candidate_id").set_index("candidate_id").to_dict(orient="index")
+        if not decisions.empty and "candidate_id" in decisions.columns
+        else {}
+    )
+    for _, candidate in candidates.iterrows():
+        candidate_id = str(candidate.get("candidate_id", ""))
+        decision = decision_map.get(candidate_id)
+        issues: list[str] = []
+        suggestions: list[str] = []
+        if decision is None:
+            issues.append("missing_decision")
+            suggestions.append("Return exactly one decision for this candidate_id.")
+            feedback_rows.append(
+                {
+                    "candidate_id": candidate_id,
+                    "factor_name": str(candidate.get("factor_name", "")),
+                    "passed": False,
+                    "issues": issues,
+                    "suggestions": suggestions,
+                }
+            )
+            continue
+
+        audit_fields = {
+            "formula_hypothesis": str(decision.get("llm_formula_hypothesis", "")).strip(),
+            "support_summary": str(decision.get("llm_support_summary", "")).strip(),
+            "counter_evidence": str(decision.get("llm_counter_evidence", "")).strip(),
+            "regime_summary": str(decision.get("llm_regime_summary", "")).strip(),
+            "decision_logic": str(decision.get("llm_decision_logic", "")).strip(),
+        }
+        missing_fields = [name for name, value in audit_fields.items() if not value]
+        if missing_fields:
+            issues.append("missing_audit_fields")
+            suggestions.append(f"Fill audit fields: {', '.join(missing_fields)}.")
+
+        support_positive = _count_terms(audit_fields["support_summary"], POSITIVE_EVIDENCE_TERMS)
+        support_negative = _count_terms(audit_fields["support_summary"], NEGATIVE_EVIDENCE_TERMS)
+        if support_negative > support_positive:
+            issues.append("support_summary_negative")
+            suggestions.append("Move negative evidence to counter_evidence; support_summary should cite positive train evidence.")
+
+        counter_positive = _count_terms(audit_fields["counter_evidence"], POSITIVE_EVIDENCE_TERMS)
+        counter_negative = _count_terms(audit_fields["counter_evidence"], NEGATIVE_EVIDENCE_TERMS)
+        if counter_positive > counter_negative:
+            issues.append("counter_evidence_positive")
+            suggestions.append("Move positive evidence to support_summary; counter_evidence should cite risks/conflicts.")
+
+        expected_regime = _expected_regime(candidate)
+        active_regime = str(decision.get("llm_active_regime", "uncertain"))
+        if expected_regime != "uncertain" and active_regime != expected_regime:
+            issues.append("regime_mismatch")
+            suggestions.append(f"Train regime IC contrast supports {expected_regime}; revise active_regime or justify uncertainty.")
+
+        if _decision_conflicts_with_logic(decision.get("llm_decision", ""), audit_fields["decision_logic"]):
+            issues.append("decision_logic_conflict")
+            suggestions.append("Decision logic contradicts keep/drop; rewrite it or change the decision.")
+
+        feedback_rows.append(
+            {
+                "candidate_id": candidate_id,
+                "factor_name": str(candidate.get("factor_name", "")),
+                "passed": not issues,
+                "issues": issues,
+                "suggestions": suggestions,
+                "expected_regime": expected_regime,
+                "llm_active_regime": active_regime,
+            }
+        )
+
+    n_candidates = len(feedback_rows)
+    n_failed = sum(1 for row in feedback_rows if not row["passed"])
+    return {
+        "critic_role": "train_only_evidence_critic",
+        "held_out_metrics_visible": False,
+        "summary": {
+            "n_candidates": float(n_candidates),
+            "n_failed": float(n_failed),
+            "pass_rate": float((n_candidates - n_failed) / n_candidates) if n_candidates else float("nan"),
+        },
+        "feedback": feedback_rows,
+    }
 
 
 def candidate_frame_from_view(reasoning_view: dict[str, object]) -> pd.DataFrame:

@@ -51,6 +51,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - The LLM still cannot inspect raw prices, hidden labels, rule decisions, or held-out test metrics.
    - `--include-evidence-tags` enables a tag-assisted ablation; it is not the default formal reasoning view.
    - `--include-family` and `--include-family-summary` enable family-assisted ablations; they are not the default formal reasoning view.
+   - `--revision-rounds` enables critic-guided revision before held-out evaluation.
 7. Evaluate:
    - synthetic: keep accuracy, keep precision/recall/balanced accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
    - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown
@@ -72,6 +73,14 @@ The current bounded audit is a single-pass agentic baseline. A stronger reasonin
 7. Benchmark: score decisions on held-out IC, strategy Sharpe, portfolio backtest, and explanation faithfulness.
 
 This keeps the LLM in the decision/explanation role while making reasoning quality measurable.
+
+The implemented revision workflow is:
+
+```bash
+sear llm ... --revision-rounds 1 --critic-out outputs/critic.json
+```
+
+The critic is deterministic and train-only. It checks audit-field polarity, regime consistency, and decision-logic contradictions before asking the LLM to revise. Held-out metrics are joined only after the final response.
 
 ## Outputs
 
