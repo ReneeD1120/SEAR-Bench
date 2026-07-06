@@ -446,3 +446,44 @@ Current interpretation:
 - On held-out IC, the larger run is unfavorable: dropped candidates have higher mean test IC than kept candidates.
 - Explanation faithfulness remains the main blocker for claiming strong reasoning: overall faithfulness is only about `44%-47%`.
 - The next step should compare stronger models under the same family-blind agentic-audit protocol and report both financial selection metrics and faithfulness metrics.
+
+## Portfolio-Level Backtest
+
+Implementation:
+
+- Added `sear portfolio`.
+- Input: a decisions CSV with `symbol`, `factor_name`, and a keep/drop decision column.
+- It rebuilds the selected kept factors, aggregates factor scores per symbol, and runs a test-period cross-sectional long-short strategy.
+- Supports equal factor weighting and absolute train-IC weighting.
+- Reports gross/net return, transaction costs, turnover, Sharpe, cumulative return, and max drawdown.
+- Default cost is `5` bps per unit turnover.
+
+Qwen2.5-3B bounded agentic audit portfolio, `limit=5`, decisions from `qwen25_3b_agentic_faith_decisions_l5_t5_s1_4096.csv`:
+
+- `n_kept_factor_rows=8`, `n_kept_symbols=3`.
+- Equal-weight gross Sharpe: `-0.9494`.
+- Equal-weight net Sharpe: `-1.3152`.
+- Equal-weight gross cumulative return: `-0.5072`.
+- Equal-weight net cumulative return: `-0.6128`.
+- Equal-weight average daily turnover: `0.7006`.
+- IC-weighted gross Sharpe: `-0.9237`.
+- IC-weighted net Sharpe: `-1.3141`.
+- IC-weighted net cumulative return: `-0.6095`.
+
+Rule baseline portfolio, `limit=5`, decisions from `real_l5_for_rule_portfolio/real_market_factor_table.csv`:
+
+- `n_kept_factor_rows=181`, `n_kept_symbols=4`.
+- Equal-weight gross Sharpe: `-1.0628`.
+- Equal-weight net Sharpe: `-1.2607`.
+- Equal-weight net cumulative return: `-0.5834`.
+- IC-weighted gross Sharpe: `-1.3919`.
+- IC-weighted net Sharpe: `-1.6081`.
+- IC-weighted net cumulative return: `-0.6727`.
+
+Interpretation:
+
+- The LLM kept-factor portfolio does not produce a positive tradable result in this slice.
+- It is slightly better than the rule baseline on equal-weight gross Sharpe, but both are negative.
+- Transaction costs matter: high turnover pushes net Sharpe materially lower.
+- The earlier single-factor proxy Sharpe separation does not automatically translate into portfolio-level profitability.
+- Portfolio-level backtest should become a required benchmark metric before claiming financial usefulness.

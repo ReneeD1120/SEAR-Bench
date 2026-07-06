@@ -57,6 +57,21 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - LLM: kept vs dropped test IC/Sharpe, rule agreement, synthetic label accuracy when labels exist, and reasoning-quality diagnostics
    - reasoning diagnostics include confidence diversity, non-uncertain regime rate, audit non-empty rate, and audit uniqueness rate
    - explanation faithfulness checks whether support/counter/regime/decision explanations are consistent with structured train evidence
+   - portfolio backtest evaluates kept factors as a test-period cross-sectional long-short strategy with equal/IC weighting, transaction costs, turnover, Sharpe, cumulative return, and drawdown
+
+## Strong Reasoning Target Structure
+
+The current bounded audit is a single-pass agentic baseline. A stronger reasoning architecture should use separate stages:
+
+1. Hypothesis generation: infer the economic meaning of each formula.
+2. Evidence audit: summarize train-only support and counter-evidence.
+3. Regime specialist: decide whether high-vol, low-vol, none, or uncertain is supported.
+4. Critic: check whether support/counter/regime statements are faithful to the structured evidence.
+5. Revision: force the model to repair contradicted explanations before final keep/drop.
+6. Final judge: output decisions only after the critic passes.
+7. Benchmark: score decisions on held-out IC, strategy Sharpe, portfolio backtest, and explanation faithfulness.
+
+This keeps the LLM in the decision/explanation role while making reasoning quality measurable.
 
 ## Outputs
 
