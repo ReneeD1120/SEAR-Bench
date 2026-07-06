@@ -46,7 +46,9 @@ Agentic reasoning protocol:
 - Set global_assessment to exactly one of: mostly_positive, mixed, mostly_negative.
 - Set confidence as your calibrated certainty in [0, 1]. It should vary across candidates when the evidence differs.
 - Do not copy example values. Repeated identical confidence, regime, or rationale across all candidates is considered failed reasoning.
-- Use concise natural language in evidence_audit. Do not output hidden chain-of-thought; output only the final audit summary.
+- Use concise natural language in evidence_audit. Each audit field must be at most 12 words.
+- Do not output hidden chain-of-thought; output only the final audit summary.
+- Minimize whitespace in the returned JSON.
 - Return compact JSON only; do not include markdown fences, comments, or trailing text.
 
 Allowed regimes:
