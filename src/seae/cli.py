@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .backtest import PortfolioBacktestConfig, run_portfolio_backtest
 from .experiments import (
     audit_llm_reasoning_view,
     build_llm_reasoning_view,
@@ -78,6 +79,17 @@ def main() -> None:
     p_score.add_argument("--include-family-summary", action="store_true")
     p_score.add_argument("--decisions-out", default="outputs/llm_scored_decisions.csv")
     p_score.add_argument("--summary-out", default="outputs/llm_scored_summary.json")
+    p_port = sub.add_parser("portfolio")
+    p_port.add_argument("--zip-path", required=True)
+    p_port.add_argument("--decisions-path", required=True)
+    p_port.add_argument("--limit", type=int, default=10)
+    p_port.add_argument("--decision-col", default="llm_decision")
+    p_port.add_argument("--keep-value", default="keep")
+    p_port.add_argument("--cost-bps", type=float, default=5.0)
+    p_port.add_argument("--long-quantile", type=float, default=0.3)
+    p_port.add_argument("--signal-window", type=int, default=20)
+    p_port.add_argument("--factor-weighting", choices=["equal", "ic", "both"], default="both")
+    p_port.add_argument("--output-dir", default="outputs/portfolio_backtest")
     args = parser.parse_args()
     if args.cmd == "synthetic":
         config = SyntheticConfig(n_assets=args.n_assets, n_days=args.n_days, seed=args.seed)
@@ -234,6 +246,21 @@ def main() -> None:
         summary_out.write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         print(f"decisions_written={decisions_out}")
         print(f"summary_written={summary_out}")
+        print(summary)
+    elif args.cmd == "portfolio":
+        config = PortfolioBacktestConfig(
+            zip_path=args.zip_path,
+            decisions_path=args.decisions_path,
+            limit=args.limit,
+            decision_col=args.decision_col,
+            keep_value=args.keep_value,
+            signal_window=args.signal_window,
+            long_quantile=args.long_quantile,
+            cost_bps=args.cost_bps,
+            factor_weighting=args.factor_weighting,
+            output_dir=args.output_dir,
+        )
+        _, summary = run_portfolio_backtest(config)
         print(summary)
 
 
