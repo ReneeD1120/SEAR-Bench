@@ -259,6 +259,98 @@ def _unique_text_rate(series: pd.Series) -> float:
     return float(nonempty.nunique() / len(nonempty))
 
 
+POSITIVE_EVIDENCE_TERMS = {
+    "positive",
+    "strong",
+    "stable",
+    "stability",
+    "high",
+    "higher",
+    "useful",
+    "utility",
+    "support",
+    "supports",
+    "keep",
+    "good",
+}
+
+NEGATIVE_EVIDENCE_TERMS = {
+    "negative",
+    "weak",
+    "low",
+    "lower",
+    "drawdown",
+    "risk",
+    "conflict",
+    "caution",
+    "poor",
+    "lack",
+    "large",
+    "severe",
+    "drop",
+}
+
+
+def _count_terms(text: object, terms: set[str]) -> int:
+    tokens = re.findall(r"[a-z_]+", str(text).lower())
+    return sum(1 for token in tokens if token in terms)
+
+
+def _expected_regime(row: pd.Series, *, min_contrast: float = 0.02) -> str:
+    high = row.get("train_regime_ic_high_vol", float("nan"))
+    low = row.get("train_regime_ic_low_vol", float("nan"))
+    try:
+        high_value = float(high)
+        low_value = float(low)
+    except (TypeError, ValueError):
+        return "uncertain"
+    if not math.isfinite(high_value) or not math.isfinite(low_value):
+        return "uncertain"
+    if abs(high_value - low_value) < min_contrast:
+        return "uncertain"
+    return "high_vol" if abs(high_value) > abs(low_value) else "low_vol"
+
+
+def add_explanation_faithfulness(scored: pd.DataFrame) -> pd.DataFrame:
+    """Attach heuristic faithfulness checks for structured LLM evidence audits."""
+    if scored.empty:
+        return scored
+    required = {
+        "llm_support_summary",
+        "llm_counter_evidence",
+        "llm_active_regime",
+        "llm_decision",
+        "llm_decision_logic",
+    }
+    if not required.issubset(scored.columns):
+        return scored
+    out = scored.copy()
+    support_positive = out["llm_support_summary"].map(lambda text: _count_terms(text, POSITIVE_EVIDENCE_TERMS))
+    support_negative = out["llm_support_summary"].map(lambda text: _count_terms(text, NEGATIVE_EVIDENCE_TERMS))
+    counter_positive = out["llm_counter_evidence"].map(lambda text: _count_terms(text, POSITIVE_EVIDENCE_TERMS))
+    counter_negative = out["llm_counter_evidence"].map(lambda text: _count_terms(text, NEGATIVE_EVIDENCE_TERMS))
+    out["faith_support_polarity_ok"] = support_positive >= support_negative
+    out["faith_counter_polarity_ok"] = counter_negative >= counter_positive
+    out["faith_expected_regime"] = out.apply(_expected_regime, axis=1)
+    out["faith_regime_ok"] = (out["faith_expected_regime"] == "uncertain") | (
+        out["llm_active_regime"] == out["faith_expected_regime"]
+    )
+    out["faith_decision_conflict"] = (
+        (out["llm_decision"] == "keep")
+        & out["llm_decision_logic"].fillna("").astype(str).str.lower().str.contains("lack|not|caution|drop|negative")
+    ) | (
+        (out["llm_decision"] == "drop")
+        & out["llm_decision_logic"].fillna("").astype(str).str.lower().str.contains("useful|utility|keep|strong")
+    )
+    out["faithfulness_ok"] = (
+        out["faith_support_polarity_ok"]
+        & out["faith_counter_polarity_ok"]
+        & out["faith_regime_ok"]
+        & ~out["faith_decision_conflict"]
+    )
+    return out
+
+
 def candidate_frame_from_view(reasoning_view: dict[str, object]) -> pd.DataFrame:
     top_factors = reasoning_view.get("top_factors", [])
     if not isinstance(top_factors, list):
@@ -287,17 +379,46 @@ def evaluate_llm_decisions(
             "mean_test_strategy_sharpe_kept": float("nan"),
             "mean_test_strategy_sharpe_dropped": float("nan"),
         }
+    table_metrics = table.copy()
+    if "evidence" in table_metrics.columns:
+        table_metrics = table_metrics.assign(
+            train_ic_ir=table_metrics["evidence"].map(lambda ev: getattr(ev, "ic_ir", float("nan"))),
+            train_win_rate=table_metrics["evidence"].map(lambda ev: getattr(ev, "win_rate", float("nan"))),
+            train_stability=table_metrics["evidence"].map(lambda ev: getattr(ev, "stability", float("nan"))),
+            train_n_obs=table_metrics["evidence"].map(lambda ev: getattr(ev, "n_obs", float("nan"))),
+            train_regime_ic_high_vol=table_metrics["evidence"].map(
+                lambda ev: getattr(ev, "regime_ic_high_vol", float("nan"))
+            ),
+            train_regime_ic_low_vol=table_metrics["evidence"].map(
+                lambda ev: getattr(ev, "regime_ic_low_vol", float("nan"))
+            ),
+            train_regime_contrast=table_metrics["evidence"].map(
+                lambda ev: getattr(ev, "regime_contrast", float("nan"))
+            ),
+        )
     metric_cols = [
         "symbol",
         "factor_name",
         "train_ic",
+        "train_ic_ir",
+        "train_win_rate",
+        "train_stability",
+        "train_n_obs",
+        "train_regime_ic_high_vol",
+        "train_regime_ic_low_vol",
+        "train_regime_contrast",
+        "train_strategy_mean_return",
+        "train_strategy_sharpe",
+        "train_strategy_cum_return",
+        "train_strategy_max_drawdown",
         "test_ic",
         "test_strategy_mean_return",
         "test_strategy_sharpe",
         "test_strategy_cum_return",
         "test_strategy_max_drawdown",
     ]
-    optional_cols = [c for c in ["decision", "active_regime", "label_keep"] if c in table.columns]
+    metric_cols = [c for c in metric_cols if c in table_metrics.columns]
+    optional_cols = [c for c in ["decision", "active_regime", "label_keep"] if c in table_metrics.columns]
     candidate_frame = candidate_frame_from_view(reasoning_view or {})
     working = decisions.copy()
     if "candidate_id" in working.columns and not candidate_frame.empty and "candidate_id" in candidate_frame.columns:
@@ -308,7 +429,8 @@ def evaluate_llm_decisions(
     merge_keys = ["symbol", "factor_name"]
     if "family" in working.columns:
         merge_keys.append("family")
-    merged = working.merge(table[metric_cols + ["family"] + optional_cols], on=merge_keys, how="left")
+    merged = working.merge(table_metrics[metric_cols + ["family"] + optional_cols], on=merge_keys, how="left")
+    merged = add_explanation_faithfulness(merged)
     keep = merged["llm_decision"] == "keep"
     valid_strategy_sharpe = merged["test_strategy_sharpe"].notna()
     valid_cum_return = merged["test_strategy_cum_return"].notna()
@@ -335,6 +457,18 @@ def evaluate_llm_decisions(
     if "llm_evidence_audit" in merged.columns:
         summary["evidence_audit_nonempty_rate"] = _nonempty_text_rate(merged["llm_evidence_audit"])
         summary["evidence_audit_unique_rate"] = _unique_text_rate(merged["llm_evidence_audit"])
+    for column in [
+        "faith_support_polarity_ok",
+        "faith_counter_polarity_ok",
+        "faith_regime_ok",
+        "faith_decision_conflict",
+        "faithfulness_ok",
+    ]:
+        if column in merged.columns:
+            if column == "faith_decision_conflict":
+                summary[f"{column}_rate"] = float(merged[column].mean())
+            else:
+                summary[f"{column}_rate"] = float(merged[column].mean())
     for column in [
         "llm_formula_hypothesis",
         "llm_support_summary",

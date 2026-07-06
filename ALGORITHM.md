@@ -56,6 +56,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown
    - LLM: kept vs dropped test IC/Sharpe, rule agreement, synthetic label accuracy when labels exist, and reasoning-quality diagnostics
    - reasoning diagnostics include confidence diversity, non-uncertain regime rate, audit non-empty rate, and audit uniqueness rate
+   - explanation faithfulness checks whether support/counter/regime/decision explanations are consistent with structured train evidence
 
 ## Outputs
 
