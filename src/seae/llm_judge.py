@@ -365,6 +365,16 @@ TRAIN_EVIDENCE_METRICS = {
     "train_strategy_sharpe",
     "train_strategy_cum_return",
     "train_strategy_max_drawdown",
+    "train_rolling_window",
+    "train_rolling_step",
+    "train_rolling_ic_mean",
+    "train_rolling_ic_recent",
+    "train_rolling_ic_std",
+    "train_rolling_ic_trend",
+    "train_rolling_ic_positive_rate",
+    "train_rolling_ic_abs_mean",
+    "train_rolling_ic_decay",
+    "train_rolling_ic_n_windows",
 }
 
 
@@ -762,6 +772,22 @@ def evaluate_llm_decisions(
             train_regime_contrast=table_metrics["evidence"].map(
                 lambda ev: getattr(ev, "regime_contrast", float("nan"))
             ),
+            train_rolling_window=table_metrics["evidence"].map(lambda ev: getattr(ev, "rolling_window", float("nan"))),
+            train_rolling_step=table_metrics["evidence"].map(lambda ev: getattr(ev, "rolling_step", float("nan"))),
+            train_rolling_ic_mean=table_metrics["evidence"].map(lambda ev: getattr(ev, "rolling_ic_mean", float("nan"))),
+            train_rolling_ic_recent=table_metrics["evidence"].map(lambda ev: getattr(ev, "rolling_ic_recent", float("nan"))),
+            train_rolling_ic_std=table_metrics["evidence"].map(lambda ev: getattr(ev, "rolling_ic_std", float("nan"))),
+            train_rolling_ic_trend=table_metrics["evidence"].map(lambda ev: getattr(ev, "rolling_ic_trend", float("nan"))),
+            train_rolling_ic_positive_rate=table_metrics["evidence"].map(
+                lambda ev: getattr(ev, "rolling_ic_positive_rate", float("nan"))
+            ),
+            train_rolling_ic_abs_mean=table_metrics["evidence"].map(
+                lambda ev: getattr(ev, "rolling_ic_abs_mean", float("nan"))
+            ),
+            train_rolling_ic_decay=table_metrics["evidence"].map(lambda ev: getattr(ev, "rolling_ic_decay", float("nan"))),
+            train_rolling_ic_n_windows=table_metrics["evidence"].map(
+                lambda ev: getattr(ev, "rolling_ic_n_windows", float("nan"))
+            ),
         )
     metric_cols = [
         "symbol",
@@ -778,6 +804,16 @@ def evaluate_llm_decisions(
         "train_strategy_sharpe",
         "train_strategy_cum_return",
         "train_strategy_max_drawdown",
+        "train_rolling_window",
+        "train_rolling_step",
+        "train_rolling_ic_mean",
+        "train_rolling_ic_recent",
+        "train_rolling_ic_std",
+        "train_rolling_ic_trend",
+        "train_rolling_ic_positive_rate",
+        "train_rolling_ic_abs_mean",
+        "train_rolling_ic_decay",
+        "train_rolling_ic_n_windows",
         "test_ic",
         "test_strategy_mean_return",
         "test_strategy_sharpe",

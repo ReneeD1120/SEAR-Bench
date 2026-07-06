@@ -3,8 +3,12 @@
 ## Current Factor Pool
 
 - `alpha158`: 52 Qlib-style OHLCV factors.
-- `alpha360`: 276 total factors after AlphaBench-style expansion.
+- `alpha360`: 276 total factors after the first AlphaBench-style expansion.
+- `alpha1000`: 1,772 readable factor names/formulas after broader AlphaBench-style expansion with rolling means/stds/z-scores/ranks/min-max transforms, lags, spreads, and interactions.
 - Families include return, momentum, volatility, mean reversion, volume, volume volatility, range, gap, intraday, candlestick, normalization, lag, rank, min-max, spread, and interaction.
+- Real-data experiments now default to `alpha1000`.
+- LLM candidate selection now uses explicit `--candidate-count`; old `--top-k` remains only as compatibility fallback.
+- Formal LLM evidence includes train-only rolling IC profile fields using the default `252` trading-day window and `21` trading-day step.
 
 ## Synthetic Benchmark
 

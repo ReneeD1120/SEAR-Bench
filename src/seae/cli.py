@@ -43,6 +43,7 @@ def main() -> None:
     p_reason.add_argument("--zip-path", required=True)
     p_reason.add_argument("--limit", type=int, default=10)
     p_reason.add_argument("--top-k", type=int, default=5)
+    p_reason.add_argument("--candidate-count", type=int, default=None)
     p_reason.add_argument("--diagnostic-leaky", action="store_true")
     p_reason.add_argument("--include-evidence-tags", action="store_true")
     p_reason.add_argument("--factor-sample-size", type=int, default=6)
@@ -52,6 +53,7 @@ def main() -> None:
     p_llm.add_argument("--zip-path", required=True)
     p_llm.add_argument("--limit", type=int, default=10)
     p_llm.add_argument("--top-k", type=int, default=5)
+    p_llm.add_argument("--candidate-count", type=int, default=None)
     p_llm.add_argument("--backend", choices=["openai-compatible", "hf-local"], default="openai-compatible")
     p_llm.add_argument("--model", default="Qwen/Qwen3-8B")
     p_llm.add_argument("--base-url", default=None)
@@ -78,6 +80,7 @@ def main() -> None:
     p_score.add_argument("--response-in", required=True)
     p_score.add_argument("--limit", type=int, default=10)
     p_score.add_argument("--top-k", type=int, default=5)
+    p_score.add_argument("--candidate-count", type=int, default=None)
     p_score.add_argument("--include-evidence-tags", action="store_true")
     p_score.add_argument("--factor-sample-size", type=int, default=6)
     p_score.add_argument("--include-family", action="store_true")
@@ -94,6 +97,7 @@ def main() -> None:
     p_port.add_argument("--long-quantile", type=float, default=0.3)
     p_port.add_argument("--signal-window", type=int, default=20)
     p_port.add_argument("--factor-weighting", choices=["equal", "ic", "both"], default="both")
+    p_port.add_argument("--factor-bank", default="alpha1000")
     p_port.add_argument("--output-dir", default="outputs/portfolio_backtest")
     args = parser.parse_args()
     if args.cmd == "synthetic":
@@ -129,6 +133,7 @@ def main() -> None:
             else build_llm_reasoning_view(
                 table,
                 top_k=args.top_k,
+                candidate_count=args.candidate_count,
                 include_tags=args.include_evidence_tags,
                 factor_sample_size=args.factor_sample_size,
                 include_family=args.include_family,
@@ -141,6 +146,7 @@ def main() -> None:
         view = build_llm_reasoning_view(
             table,
             top_k=args.top_k,
+            candidate_count=args.candidate_count,
             include_tags=args.include_evidence_tags,
             factor_sample_size=args.factor_sample_size,
             include_family=args.include_family,
@@ -234,6 +240,10 @@ def main() -> None:
         summary["model"] = args.model
         summary["limit"] = float(args.limit)
         summary["top_k"] = float(args.top_k)
+        summary["candidate_count_requested"] = float(
+            args.candidate_count if args.candidate_count is not None else args.top_k * 3
+        )
+        summary["candidate_count_actual"] = float(view.get("candidate_selection", {}).get("candidate_count", float("nan")))
         summary["include_evidence_tags"] = float(args.include_evidence_tags)
         summary["factor_sample_size"] = float(args.factor_sample_size)
         summary["include_family"] = float(args.include_family)
@@ -261,6 +271,7 @@ def main() -> None:
         view = build_llm_reasoning_view(
             table,
             top_k=args.top_k,
+            candidate_count=args.candidate_count,
             include_tags=args.include_evidence_tags,
             factor_sample_size=args.factor_sample_size,
             include_family=args.include_family,
@@ -280,6 +291,10 @@ def main() -> None:
         summary["response_in"] = str(args.response_in)
         summary["limit"] = float(args.limit)
         summary["top_k"] = float(args.top_k)
+        summary["candidate_count_requested"] = float(
+            args.candidate_count if args.candidate_count is not None else args.top_k * 3
+        )
+        summary["candidate_count_actual"] = float(view.get("candidate_selection", {}).get("candidate_count", float("nan")))
         summary["include_evidence_tags"] = float(args.include_evidence_tags)
         summary["factor_sample_size"] = float(args.factor_sample_size)
         summary["include_family"] = float(args.include_family)
@@ -304,6 +319,7 @@ def main() -> None:
             long_quantile=args.long_quantile,
             cost_bps=args.cost_bps,
             factor_weighting=args.factor_weighting,
+            factor_bank=args.factor_bank,
             output_dir=args.output_dir,
         )
         _, summary = run_portfolio_backtest(config)

@@ -24,6 +24,7 @@ class PortfolioBacktestConfig:
     long_quantile: float = 0.3
     cost_bps: float = 5.0
     factor_weighting: str = "both"
+    factor_bank: str = "alpha1000"
     output_dir: str | Path | None = "outputs/portfolio_backtest"
 
 
@@ -129,7 +130,7 @@ def _build_symbol_scores(
             continue
         frame = equity.frame.reset_index(drop=True)
         cutoff = int(len(frame) * config.split_ratio)
-        factors = factor_series_map(frame, bank="alpha360")
+        factors = factor_series_map(frame, bank=config.factor_bank)
         next_return = (frame["close"].shift(-1) / frame["close"] - 1.0).clip(-0.3, 0.3)
         score_parts: list[pd.Series] = []
         weight_parts: list[float] = []
@@ -213,6 +214,7 @@ def run_portfolio_backtest(config: PortfolioBacktestConfig) -> tuple[dict[str, p
         "n_kept_symbols": float(kept["symbol"].nunique()) if not kept.empty else 0.0,
         "cost_bps": float(config.cost_bps),
         "long_quantile": float(config.long_quantile),
+        "factor_bank": config.factor_bank,
     }
     for weighting in weightings:
         scores = _build_symbol_scores(config, kept, weighting=weighting)

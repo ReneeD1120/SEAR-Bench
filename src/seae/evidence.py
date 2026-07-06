@@ -55,6 +55,16 @@ class FactorEvidence:
     test_strategy_sharpe: float = float("nan")
     test_strategy_cum_return: float = float("nan")
     test_strategy_max_drawdown: float = float("nan")
+    rolling_window: int = 252
+    rolling_step: int = 21
+    rolling_ic_mean: float = float("nan")
+    rolling_ic_recent: float = float("nan")
+    rolling_ic_std: float = float("nan")
+    rolling_ic_trend: float = float("nan")
+    rolling_ic_positive_rate: float = float("nan")
+    rolling_ic_abs_mean: float = float("nan")
+    rolling_ic_decay: float = float("nan")
+    rolling_ic_n_windows: int = 0
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)
@@ -103,6 +113,75 @@ def _directional_strategy_returns(
     return position * future_ret.clip(-0.3, 0.3) / max(1, horizon)
 
 
+def _rolling_ic_profile(
+    df: pd.DataFrame,
+    factor: pd.Series,
+    *,
+    horizon: int,
+    window: int = 252,
+    step: int = 21,
+) -> dict[str, float | int]:
+    feature = factor.astype(float).replace([np.inf, -np.inf], np.nan)
+    future_ret = (df["close"].shift(-horizon) / df["close"] - 1.0).replace([np.inf, -np.inf], np.nan)
+    aligned = pd.concat([feature, future_ret], axis=1).replace([np.inf, -np.inf], np.nan).dropna()
+    if len(aligned) < max(window, 30):
+        return {
+            "rolling_window": window,
+            "rolling_step": step,
+            "rolling_ic_mean": float("nan"),
+            "rolling_ic_recent": float("nan"),
+            "rolling_ic_std": float("nan"),
+            "rolling_ic_trend": float("nan"),
+            "rolling_ic_positive_rate": float("nan"),
+            "rolling_ic_abs_mean": float("nan"),
+            "rolling_ic_decay": float("nan"),
+            "rolling_ic_n_windows": 0,
+        }
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        rolling_ic = (
+            aligned.iloc[:, 0]
+            .rolling(window)
+            .corr(aligned.iloc[:, 1])
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+        )
+    sampled = rolling_ic.iloc[::step].to_numpy(dtype=float)
+    sampled = sampled[np.isfinite(sampled)]
+    if len(sampled) == 0:
+        return {
+            "rolling_window": window,
+            "rolling_step": step,
+            "rolling_ic_mean": float("nan"),
+            "rolling_ic_recent": float("nan"),
+            "rolling_ic_std": float("nan"),
+            "rolling_ic_trend": float("nan"),
+            "rolling_ic_positive_rate": float("nan"),
+            "rolling_ic_abs_mean": float("nan"),
+            "rolling_ic_decay": float("nan"),
+            "rolling_ic_n_windows": 0,
+        }
+
+    arr = sampled
+    x = np.arange(len(arr), dtype=float)
+    trend = float(np.polyfit(x, arr, 1)[0]) if len(arr) >= 3 else float("nan")
+    mean = float(arr.mean())
+    recent = float(arr[-1])
+    return {
+        "rolling_window": window,
+        "rolling_step": step,
+        "rolling_ic_mean": mean,
+        "rolling_ic_recent": recent,
+        "rolling_ic_std": float(arr.std(ddof=1)) if len(arr) > 1 else float("nan"),
+        "rolling_ic_trend": trend,
+        "rolling_ic_positive_rate": float((arr > 0).mean()),
+        "rolling_ic_abs_mean": float(np.abs(arr).mean()),
+        "rolling_ic_decay": float(abs(recent) - abs(mean)),
+        "rolling_ic_n_windows": int(len(arr)),
+    }
+
+
 def extract_factor_evidence(
     df: pd.DataFrame,
     factor: pd.Series,
@@ -112,6 +191,8 @@ def extract_factor_evidence(
     horizon: int = 5,
     vol_window: int = 20,
     strategy_orientation: float | None = None,
+    rolling_window: int = 252,
+    rolling_step: int = 21,
 ) -> FactorEvidence:
     feature = factor.astype(float).replace([np.inf, -np.inf], np.nan)
     future_ret = (df["close"].shift(-horizon) / df["close"] - 1.0).replace([np.inf, -np.inf], np.nan)
@@ -153,6 +234,13 @@ def extract_factor_evidence(
         orientation = 1.0 if np.isnan(ic) or ic >= 0 else -1.0
     strategy_returns = _directional_strategy_returns(df, feature, horizon=horizon, orientation=float(orientation))
     strategy = _strategy_stats(strategy_returns, horizon=horizon)
+    rolling = _rolling_ic_profile(
+        df,
+        feature,
+        horizon=horizon,
+        window=rolling_window,
+        step=rolling_step,
+    )
 
     return FactorEvidence(
         symbol=symbol,
@@ -170,6 +258,16 @@ def extract_factor_evidence(
         strategy_sharpe=strategy["sharpe"],
         strategy_cum_return=strategy["cum_return"],
         strategy_max_drawdown=strategy["max_drawdown"],
+        rolling_window=int(rolling["rolling_window"]),
+        rolling_step=int(rolling["rolling_step"]),
+        rolling_ic_mean=float(rolling["rolling_ic_mean"]),
+        rolling_ic_recent=float(rolling["rolling_ic_recent"]),
+        rolling_ic_std=float(rolling["rolling_ic_std"]),
+        rolling_ic_trend=float(rolling["rolling_ic_trend"]),
+        rolling_ic_positive_rate=float(rolling["rolling_ic_positive_rate"]),
+        rolling_ic_abs_mean=float(rolling["rolling_ic_abs_mean"]),
+        rolling_ic_decay=float(rolling["rolling_ic_decay"]),
+        rolling_ic_n_windows=int(rolling["rolling_ic_n_windows"]),
     )
 
 
@@ -181,6 +279,8 @@ def split_time_evidence(
     factor_name: str,
     horizon: int = 5,
     split_ratio: float = 0.7,
+    rolling_window: int = 252,
+    rolling_step: int = 21,
 ) -> FactorEvidence:
     cutoff = int(len(df) * split_ratio)
     train_df = df.iloc[:cutoff].copy()
@@ -194,6 +294,8 @@ def split_time_evidence(
         symbol=symbol,
         factor_name=factor_name,
         horizon=horizon,
+        rolling_window=rolling_window,
+        rolling_step=rolling_step,
     )
     orientation = 1.0 if np.isnan(train_ev.ic) or train_ev.ic >= 0 else -1.0
     test_ev = extract_factor_evidence(
@@ -203,6 +305,8 @@ def split_time_evidence(
         factor_name=factor_name,
         horizon=horizon,
         strategy_orientation=orientation,
+        rolling_window=rolling_window,
+        rolling_step=rolling_step,
     )
 
     return FactorEvidence(
@@ -227,4 +331,14 @@ def split_time_evidence(
         test_strategy_sharpe=test_ev.strategy_sharpe,
         test_strategy_cum_return=test_ev.strategy_cum_return,
         test_strategy_max_drawdown=test_ev.strategy_max_drawdown,
+        rolling_window=train_ev.rolling_window,
+        rolling_step=train_ev.rolling_step,
+        rolling_ic_mean=train_ev.rolling_ic_mean,
+        rolling_ic_recent=train_ev.rolling_ic_recent,
+        rolling_ic_std=train_ev.rolling_ic_std,
+        rolling_ic_trend=train_ev.rolling_ic_trend,
+        rolling_ic_positive_rate=train_ev.rolling_ic_positive_rate,
+        rolling_ic_abs_mean=train_ev.rolling_ic_abs_mean,
+        rolling_ic_decay=train_ev.rolling_ic_decay,
+        rolling_ic_n_windows=train_ev.rolling_ic_n_windows,
     )

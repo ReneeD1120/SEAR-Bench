@@ -16,6 +16,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
 2. Build candidate factors:
    - `alpha158` bank: Qlib-style core templates over returns, momentum, moving-average deviation, volatility, volume ratios, range, gap, intraday behavior, and candlestick geometry
    - `alpha360` bank: alpha158 plus AlphaBench-style expansions with lags, z-scores, rolling ranks, min-max normalization, spreads, and interactions
+   - `alpha1000` bank: broader AlphaBench-style expansion with rolling means/stds/z-scores/ranks/min-max transforms, lags, spreads, and price-volume interactions; the current implementation has `1772` readable factor names/formulas
    - each factor carries a `name`, `family`, and human-readable `formula`
 3. Extract structured evidence for each factor:
    - `IC`
@@ -29,6 +30,8 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - strategy Sharpe
    - cumulative return
    - max drawdown
+   - train-only rolling IC profile with default `252` trading-day windows and `21` trading-day step
+   - rolling fields include recent IC, mean IC, IC trend, positive-window rate, absolute IC mean, and recent-vs-average decay
    - The strategy return is a horizon-adjusted daily proxy: `sign(oriented factor signal) * clipped future return / horizon`.
 4. Judge the factor:
    - `rule_based_judge` provides a deterministic baseline.
@@ -37,6 +40,8 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
 5. Build an agent reasoning view:
    - the formal view is family-blind by default: no `family` field and no `family_summary`
    - top factor candidates provide `factor_name`, `formula`, train-only `train_factor_sample`, and train-only statistical evidence
+   - `--candidate-count` directly controls the number of factor-symbol candidates sent to the LLM
+   - old `--top-k` is retained only as a compatibility fallback; if `--candidate-count` is omitted, candidate count defaults to `top_k * 3`
    - `--factor-sample-size` controls how many train-only factor values are sent to the LLM; use small values for local GPU models
    - the `sear reason` command emits this view as JSON for a downstream LLM agent
    - `sear reason` defaults to the leakage-free version used by `sear llm`
@@ -101,10 +106,14 @@ The critic is deterministic and train-only. It checks audit-field polarity, regi
 ```bash
 sear synthetic --output-dir outputs
 sear real --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --output-dir outputs
-sear reason --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --top-k 5
-sear llm --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --model Qwen/Qwen3-8B --dry-run
-sear llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --top-k 3 --factor-sample-size 3 --model Qwen/Qwen3-8B
+sear reason --zip-path /Users/renee/Downloads/RAFPO/不复权.zip --limit 10 --candidate-count 12
+sear llm --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --candidate-count 12 --model Qwen/Qwen3-8B --dry-run
+sear llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zip --limit 3 --candidate-count 12 --factor-sample-size 3 --model Qwen/Qwen3-8B
 ```
+
+## Time-Varying Validity
+
+The main rolling validation setting is `252/21`: a 252-trading-day window stepped monthly by 21 trading days. This is the default because it balances statistical stability and regime sensitivity. Recommended ablations are `126/21` for faster factor decay detection and `504/21` for long-horizon robustness.
 
 ## Interpretation
 

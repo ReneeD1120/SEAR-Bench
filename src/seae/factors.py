@@ -127,6 +127,18 @@ def _rolling_minmax(series: str, window: int) -> Callable[[pd.DataFrame], pd.Ser
     return transform
 
 
+def _rolling_mean_factor(series: str, window: int) -> Callable[[pd.DataFrame], pd.Series]:
+    return lambda df: _safe_series(df[series].rolling(window).mean())
+
+
+def _rolling_std_factor(series: str, window: int) -> Callable[[pd.DataFrame], pd.Series]:
+    return lambda df: _safe_series(df[series].rolling(window).std())
+
+
+def _product(a: str, b: str) -> Callable[[pd.DataFrame], pd.Series]:
+    return lambda df: _safe_series(df[a] * df[b])
+
+
 def alpha158_specs() -> list[FactorSpec]:
     specs: list[FactorSpec] = []
     for w in (5, 10, 20, 60, 120):
@@ -216,11 +228,95 @@ def expansion_specs() -> list[FactorSpec]:
     return specs
 
 
+def broad_expansion_specs() -> list[FactorSpec]:
+    """Larger readable factor pool for downstream agentic reasoning.
+
+    This keeps the generator Qlib/AlphaBench-like: start from OHLCV-derived
+    primitives, apply rolling transforms/lags, then add interpretable spreads
+    and interactions. Every generated factor still has a formula string.
+    """
+    specs: list[FactorSpec] = []
+    base = [
+        ("ret_1d", "return"), ("ret_2d", "return"), ("ret_5d", "return"), ("ret_10d", "return"), ("ret_20d", "return"), ("ret_60d", "return"), ("ret_120d", "return"),
+        ("mom_5d", "momentum"), ("mom_10d", "momentum"), ("mom_20d", "momentum"), ("mom_60d", "momentum"), ("mom_120d", "momentum"),
+        ("vol_5d", "volatility"), ("vol_10d", "volatility"), ("vol_20d", "volatility"), ("vol_60d", "volatility"), ("vol_120d", "volatility"),
+        ("volume_std_5", "volume_volatility"), ("volume_std_10", "volume_volatility"), ("volume_std_20", "volume_volatility"), ("volume_std_60", "volume_volatility"), ("volume_std_120", "volume_volatility"),
+        ("volume_ratio_5", "volume"), ("volume_ratio_10", "volume"), ("volume_ratio_20", "volume"), ("volume_ratio_60", "volume"), ("volume_ratio_120", "volume"),
+        ("price_to_ma_5", "mean_reversion"), ("price_to_ma_10", "mean_reversion"), ("price_to_ma_20", "mean_reversion"), ("price_to_ma_60", "mean_reversion"), ("price_to_ma_120", "mean_reversion"),
+        ("range_pct", "range"),
+        ("hl_spread", "range"),
+        ("open_close_gap", "gap"),
+        ("close_open_return", "intraday"),
+        ("intraday_reversal", "intraday"),
+        ("open_to_close", "price_level"),
+        ("high_to_close", "price_level"),
+        ("low_to_close", "price_level"),
+        ("amplitude", "range"),
+        ("k_mid", "candlestick"),
+        ("k_mid2", "candlestick"),
+        ("k_len", "candlestick"),
+        ("k_upper", "candlestick"),
+        ("k_upper2", "candlestick"),
+        ("k_lower", "candlestick"),
+        ("k_lower2", "candlestick"),
+        ("k_shift", "candlestick"),
+        ("k_shift2", "candlestick"),
+    ]
+    windows = [5, 10, 20, 60, 120]
+    for series_name, family in base:
+        for w in windows:
+            specs.extend(
+                [
+                    FactorSpec(f"{series_name}_mean{w}", f"{family}_mean", f"rolling_mean({series_name}, {w})", _rolling_mean_factor(series_name, w)),
+                    FactorSpec(f"{series_name}_std{w}", f"{family}_std", f"rolling_std({series_name}, {w})", _rolling_std_factor(series_name, w)),
+                    FactorSpec(f"{series_name}_zwide{w}", f"{family}_zscore", f"zscore({series_name}, {w})", _rolling_zscore(series_name, w)),
+                    FactorSpec(f"{series_name}_rankwide{w}", f"{family}_rank", f"rolling_rank({series_name}, {w})", _rolling_rank(series_name, w)),
+                    FactorSpec(f"{series_name}_minmaxwide{w}", f"{family}_minmax", f"rolling_minmax({series_name}, {w})", _rolling_minmax(series_name, w)),
+                ]
+            )
+        for lag in (1, 2, 5, 10):
+            specs.append(FactorSpec(f"{series_name}_lagwide{lag}", f"{family}_lag", f"{series_name}.shift({lag})", _lagged(series_name, lag)))
+
+    for short, long in ((5, 10), (5, 20), (10, 20), (20, 60), (60, 120)):
+        specs.extend(
+            [
+                FactorSpec(f"ret_{short}d_minus_{long}d_wide", "return_spread", f"ret_{short}d - ret_{long}d", _diff(f"ret_{short}d", f"ret_{long}d")),
+                FactorSpec(f"mom_{short}d_minus_{long}d_wide", "momentum_spread", f"mom_{short}d - mom_{long}d", _diff(f"mom_{short}d", f"mom_{long}d")),
+                FactorSpec(f"vol_{short}d_minus_{long}d_wide", "volatility_spread", f"vol_{short}d - vol_{long}d", _diff(f"vol_{short}d", f"vol_{long}d")),
+                FactorSpec(f"volume_ratio_{short}_minus_{long}_wide", "volume_spread", f"volume_ratio_{short} - volume_ratio_{long}", _diff(f"volume_ratio_{short}", f"volume_ratio_{long}")),
+                FactorSpec(f"price_to_ma_{short}_minus_{long}_wide", "ma_spread", f"price_to_ma_{short} - price_to_ma_{long}", _diff(f"price_to_ma_{short}", f"price_to_ma_{long}")),
+            ]
+        )
+
+    for mom_w, vol_w in ((5, 10), (5, 20), (10, 20), (20, 60), (60, 120)):
+        specs.extend(
+            [
+                FactorSpec(f"mom_{mom_w}d_over_vol_{vol_w}d_wide", "risk_adjusted_momentum", f"mom_{mom_w}d / vol_{vol_w}d", _ratio(f"mom_{mom_w}d", f"vol_{vol_w}d")),
+                FactorSpec(f"ret_{mom_w}d_over_vol_{vol_w}d_wide", "risk_adjusted_return", f"ret_{mom_w}d / vol_{vol_w}d", _ratio(f"ret_{mom_w}d", f"vol_{vol_w}d")),
+                FactorSpec(f"mom_{mom_w}d_x_volume_ratio_{vol_w}", "price_volume_interaction", f"mom_{mom_w}d * volume_ratio_{vol_w}", _product(f"mom_{mom_w}d", f"volume_ratio_{vol_w}")),
+            ]
+        )
+
+    specs.extend(
+        [
+            FactorSpec("range_x_volume_ratio_20", "price_volume_interaction", "range_pct * volume_ratio_20", _product("range_pct", "volume_ratio_20")),
+            FactorSpec("gap_x_volume_ratio_20", "price_volume_interaction", "open_close_gap * volume_ratio_20", _product("open_close_gap", "volume_ratio_20")),
+            FactorSpec("intraday_x_volume_ratio_20", "price_volume_interaction", "close_open_return * volume_ratio_20", _product("close_open_return", "volume_ratio_20")),
+            FactorSpec("k_mid_x_volume_ratio_20", "candlestick_volume_interaction", "k_mid * volume_ratio_20", _product("k_mid", "volume_ratio_20")),
+            FactorSpec("k_upper_minus_k_lower_wide", "candlestick_spread", "k_upper - k_lower", _diff("k_upper", "k_lower")),
+            FactorSpec("k_shift_minus_k_mid", "candlestick_spread", "k_shift - k_mid", _diff("k_shift", "k_mid")),
+        ]
+    )
+    return specs
+
+
 def _specs_for_bank(bank: str) -> list[FactorSpec]:
     if bank == "alpha158":
         specs = alpha158_specs()
     elif bank == "alpha360":
         specs = alpha158_specs() + expansion_specs()
+    elif bank == "alpha1000":
+        specs = alpha158_specs() + expansion_specs() + broad_expansion_specs()
     else:
         raise ValueError(f"unknown factor bank: {bank}")
 

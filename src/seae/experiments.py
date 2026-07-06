@@ -27,9 +27,17 @@ def _labels_for_synthetic_factor(family: str, factor_name: str) -> dict[str, obj
     return truth.get(factor_name, {"label_keep": 0, "active_regime": "none"})
 
 
-def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, tuple[str, str, pd.Series]]:
-    factors = factor_series_map(df, bank="alpha360")
-    metadata = factor_metadata_map(bank="alpha360")
+DEFAULT_FACTOR_BANK = "alpha1000"
+
+
+def _factor_library(
+    df: pd.DataFrame,
+    *,
+    synthetic: bool,
+    bank: str = DEFAULT_FACTOR_BANK,
+) -> dict[str, tuple[str, str, pd.Series]]:
+    factors = factor_series_map(df, bank=bank)
+    metadata = factor_metadata_map(bank=bank)
     out = {
         name: (family, metadata[name].formula, series)
         for name, (family, series) in factors.items()
@@ -228,6 +236,7 @@ def _diversified_top_candidates(
     selected: list[int] = []
     symbol_counts: dict[str, int] = {}
     family_counts: dict[str, int] = {}
+    selected_formula_keys: set[tuple[str, str]] = set()
     effective_symbol_cap = max(
         max_per_symbol,
         int(np.ceil(candidate_count / max(1, ranked["symbol"].nunique()))),
@@ -237,6 +246,9 @@ def _diversified_top_candidates(
     for idx, row in ranked.iterrows():
         symbol = str(row["symbol"])
         family = str(row["family"])
+        formula_key = (symbol, str(row.get("formula", row["factor_name"])))
+        if formula_key in selected_formula_keys:
+            continue
         if symbol_counts.get(symbol, 0) >= effective_symbol_cap:
             continue
         if family_counts.get(family, 0) >= family_cap:
@@ -244,6 +256,7 @@ def _diversified_top_candidates(
         selected.append(idx)
         symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
         family_counts[family] = family_counts.get(family, 0) + 1
+        selected_formula_keys.add(formula_key)
         if len(selected) >= candidate_count:
             break
 
@@ -252,10 +265,14 @@ def _diversified_top_candidates(
             if idx in selected:
                 continue
             symbol = str(row["symbol"])
+            formula_key = (symbol, str(row.get("formula", row["factor_name"])))
+            if formula_key in selected_formula_keys:
+                continue
             if symbol_counts.get(symbol, 0) >= effective_symbol_cap:
                 continue
             selected.append(idx)
             symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+            selected_formula_keys.add(formula_key)
             if len(selected) >= candidate_count:
                 break
 
@@ -330,6 +347,7 @@ def build_llm_reasoning_view(
     table: pd.DataFrame,
     top_k: int = 5,
     *,
+    candidate_count: int | None = None,
     include_tags: bool = False,
     factor_sample_size: int = 6,
     include_family: bool = False,
@@ -343,6 +361,8 @@ def build_llm_reasoning_view(
     work = table.copy()
     work["_abs_train_ic"] = work["train_ic"].abs()
     work["_train_n_obs"] = work["evidence"].map(lambda ev: getattr(ev, "n_obs", 0))
+    requested_count = int(candidate_count) if candidate_count is not None else int(top_k * 3)
+    family_summary_count = max(1, min(top_k, requested_count))
     family_summary = (
         work.groupby("family", as_index=False)
         .agg(
@@ -356,12 +376,12 @@ def build_llm_reasoning_view(
             factor_count=("factor_name", "count"),
         )
         .sort_values(["mean_train_strategy_sharpe", "mean_abs_train_ic"], ascending=False)
-        .head(top_k)
+        .head(family_summary_count)
     )
 
     top = _diversified_top_candidates(
         work,
-        candidate_count=top_k * 3,
+        candidate_count=requested_count,
         min_train_n_obs=252,
         max_per_symbol=2,
     )
@@ -386,6 +406,16 @@ def build_llm_reasoning_view(
             "train_strategy_sharpe": row["train_strategy_sharpe"],
             "train_strategy_cum_return": row["train_strategy_cum_return"],
             "train_strategy_max_drawdown": row["train_strategy_max_drawdown"],
+            "train_rolling_window": ev.rolling_window,
+            "train_rolling_step": ev.rolling_step,
+            "train_rolling_ic_mean": ev.rolling_ic_mean,
+            "train_rolling_ic_recent": ev.rolling_ic_recent,
+            "train_rolling_ic_std": ev.rolling_ic_std,
+            "train_rolling_ic_trend": ev.rolling_ic_trend,
+            "train_rolling_ic_positive_rate": ev.rolling_ic_positive_rate,
+            "train_rolling_ic_abs_mean": ev.rolling_ic_abs_mean,
+            "train_rolling_ic_decay": ev.rolling_ic_decay,
+            "train_rolling_ic_n_windows": ev.rolling_ic_n_windows,
         }
         if include_family:
             candidate["family"] = row["family"]
@@ -397,12 +427,14 @@ def build_llm_reasoning_view(
         "candidate_selection": {
             "rank_basis": "train_strategy_sharpe, abs(train_ic), train_n_obs",
             "candidate_count": len(rows),
-            "candidate_count_requested": top.attrs.get("candidate_count_requested", top_k * 3),
+            "candidate_count_requested": top.attrs.get("candidate_count_requested", requested_count),
             "candidate_count_after_train_filter": top.attrs.get("candidate_count_after_filter", len(top)),
             "min_train_n_obs": top.attrs.get("min_train_n_obs", 252),
             "base_max_per_symbol": 2,
             "effective_max_per_symbol": top.attrs.get("effective_symbol_cap", 2),
             "held_out_metrics_visible_to_llm": False,
+            "factor_bank": DEFAULT_FACTOR_BANK,
+            "top_k_compat": top_k,
             "include_evidence_tags": include_tags,
             "factor_sample_size": factor_sample_size,
             "include_family": include_family,
