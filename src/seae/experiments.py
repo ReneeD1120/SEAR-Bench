@@ -15,55 +15,16 @@ from .synthetic import SyntheticConfig, generate_synthetic_benchmark
 
 
 def _labels_for_synthetic_factor(family: str, factor_name: str) -> dict[str, object]:
+    del family
     truth = {
-        "momentum": {"label_keep": 1, "active_regime": "low_vol"},
-        "return": {"label_keep": 1, "active_regime": "low_vol"},
-        "mean_reversion": {"label_keep": 1, "active_regime": "low_vol"},
-        "volume": {"label_keep": 1, "active_regime": "high_vol"},
-        "volatility": {"label_keep": 0, "active_regime": "none"},
-        "range": {"label_keep": 0, "active_regime": "none"},
-        "gap": {"label_keep": 0, "active_regime": "none"},
-        "intraday": {"label_keep": 0, "active_regime": "none"},
-        "normalization": {"label_keep": 1, "active_regime": "low_vol"},
-        "rank": {"label_keep": 0, "active_regime": "none"},
-        "momentum_zscore": {"label_keep": 1, "active_regime": "low_vol"},
-        "momentum_lag": {"label_keep": 1, "active_regime": "low_vol"},
-        "return_zscore": {"label_keep": 1, "active_regime": "low_vol"},
-        "return_lag": {"label_keep": 1, "active_regime": "low_vol"},
-        "volume_zscore": {"label_keep": 1, "active_regime": "high_vol"},
-        "volume_lag": {"label_keep": 1, "active_regime": "high_vol"},
-        "volatility_zscore": {"label_keep": 0, "active_regime": "none"},
-        "volatility_lag": {"label_keep": 0, "active_regime": "none"},
-        "mean_reversion_zscore": {"label_keep": 1, "active_regime": "low_vol"},
-        "mean_reversion_lag": {"label_keep": 1, "active_regime": "low_vol"},
-        "range_zscore": {"label_keep": 0, "active_regime": "none"},
-        "range_lag": {"label_keep": 0, "active_regime": "none"},
-        "gap_zscore": {"label_keep": 0, "active_regime": "none"},
-        "gap_lag": {"label_keep": 0, "active_regime": "none"},
-        "intraday_zscore": {"label_keep": 0, "active_regime": "none"},
-        "intraday_lag": {"label_keep": 0, "active_regime": "none"},
-        "spread": {"label_keep": 1, "active_regime": "low_vol"},
-        "interaction": {"label_keep": 1, "active_regime": "high_vol"},
-        "volume_volatility": {"label_keep": 1, "active_regime": "high_vol"},
-        "volume_volatility_zscore": {"label_keep": 1, "active_regime": "high_vol"},
-        "volume_volatility_lag": {"label_keep": 1, "active_regime": "high_vol"},
-        "volume_volatility_rank": {"label_keep": 1, "active_regime": "high_vol"},
-        "volume_volatility_minmax": {"label_keep": 1, "active_regime": "high_vol"},
-        "candlestick": {"label_keep": 0, "active_regime": "none"},
-        "candlestick_zscore": {"label_keep": 0, "active_regime": "none"},
-        "candlestick_lag": {"label_keep": 0, "active_regime": "none"},
-        "candlestick_rank": {"label_keep": 0, "active_regime": "none"},
-        "candlestick_minmax": {"label_keep": 0, "active_regime": "none"},
-        "candlestick_spread": {"label_keep": 0, "active_regime": "none"},
-        "price_level": {"label_keep": 0, "active_regime": "none"},
+        "momentum_20d": {"label_keep": 1, "active_regime": "low_vol"},
+        "reversal_5d": {"label_keep": 1, "active_regime": "high_vol"},
+        "volume_surge": {"label_keep": 1, "active_regime": "high_vol"},
+        "range_pct": {"label_keep": 0, "active_regime": "none"},
+        "close_to_open": {"label_keep": 0, "active_regime": "none"},
+        "noise_factor": {"label_keep": 0, "active_regime": "none"},
     }
-    if family in truth:
-        return truth[family]
-    if "volume" in family:
-        return {"label_keep": 1, "active_regime": "high_vol"}
-    if "momentum" in family or "return" in family or "mean_reversion" in family:
-        return {"label_keep": 1, "active_regime": "low_vol"}
-    return {"label_keep": 0, "active_regime": "none"}
+    return truth.get(factor_name, {"label_keep": 0, "active_regime": "none"})
 
 
 def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, tuple[str, str, pd.Series]]:
@@ -74,6 +35,10 @@ def _factor_library(df: pd.DataFrame, *, synthetic: bool) -> dict[str, tuple[str
         for name, (family, series) in factors.items()
     }
     if synthetic:
+        out["momentum_20d"] = ("synthetic_signal", "synthetic column: close / close.shift(20) - 1", df["momentum_20d"])
+        out["reversal_5d"] = ("synthetic_signal", "synthetic column: -(close / close.shift(5) - 1)", df["reversal_5d"])
+        out["volume_surge"] = ("synthetic_signal", "synthetic column: exp(volume shock) with regime component", df["volume_surge"])
+        out["close_to_open"] = ("synthetic_decoy", "synthetic column: close-to-open noise component", df["close_to_open"])
         out["noise_factor"] = ("noise", "synthetic noise_factor", df["noise_factor"])
     return out
 
@@ -367,6 +332,8 @@ def build_llm_reasoning_view(
     *,
     include_tags: bool = False,
     factor_sample_size: int = 6,
+    include_family: bool = False,
+    include_family_summary: bool = False,
 ) -> dict[str, object]:
     """Build a leakage-free view for LLM decisions.
 
@@ -404,7 +371,6 @@ def build_llm_reasoning_view(
         candidate = {
             "candidate_id": f"C{idx:03d}",
             "symbol": row["symbol"],
-            "family": row["family"],
             "factor_name": row["factor_name"],
             "formula": row.get("formula", ""),
             "train_factor_sample": _trim_factor_sample(row.get("train_factor_sample", []), n=factor_sample_size),
@@ -421,12 +387,13 @@ def build_llm_reasoning_view(
             "train_strategy_cum_return": row["train_strategy_cum_return"],
             "train_strategy_max_drawdown": row["train_strategy_max_drawdown"],
         }
+        if include_family:
+            candidate["family"] = row["family"]
         if include_tags:
             candidate["evidence_tags"] = _evidence_tags(row, ev)
         rows.append(candidate)
-    return {
+    view = {
         "decision_boundary": "LLM/agent may only read train/in-sample structured evidence. Held-out test metrics are hidden until benchmark evaluation.",
-        "family_summary": family_summary.drop(columns=["mean_abs_train_ic"]).to_dict(orient="records"),
         "candidate_selection": {
             "rank_basis": "train_strategy_sharpe, abs(train_ic), train_n_obs",
             "candidate_count": len(rows),
@@ -438,9 +405,14 @@ def build_llm_reasoning_view(
             "held_out_metrics_visible_to_llm": False,
             "include_evidence_tags": include_tags,
             "factor_sample_size": factor_sample_size,
+            "include_family": include_family,
+            "include_family_summary": include_family_summary,
         },
         "top_factors": rows,
     }
+    if include_family_summary:
+        view["family_summary"] = family_summary.drop(columns=["mean_abs_train_ic"]).to_dict(orient="records")
+    return view
 
 
 def audit_llm_reasoning_view(view: dict[str, object]) -> list[str]:

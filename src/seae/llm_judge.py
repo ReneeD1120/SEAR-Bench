@@ -28,7 +28,8 @@ Decision protocol:
 - Use train_factor_sample only as in-sample factor behavior, not as future performance.
 - A factor can be useful even if IC is negative, if the oriented strategy proxy is strong.
 - Some ablation views may include evidence_tags. If present, treat them as derived train-only summaries, not labels or benchmark answers.
-- Prefer factors with consistent train evidence, stronger train strategy Sharpe, acceptable drawdown, sufficient train_n_obs, and meaningful family-level support.
+- Some ablation views may include family or family_summary. If present, treat them only as coarse metadata, not as a decision rule.
+- Prefer factors with consistent train evidence, stronger train strategy Sharpe, acceptable drawdown, and sufficient train_n_obs.
 - Be conservative when evidence conflicts.
 - Do not invent data or mention raw price patterns.
 - Do not compare against risk-free rates, transaction costs, sectors, or any baseline that is not explicitly present in the structured evidence.
@@ -36,7 +37,8 @@ Decision protocol:
 - Make one decision for each provided top_factors candidate.
 - The number of decisions must exactly equal candidate_selection.candidate_count.
 - Copy candidate_id exactly from the provided top_factors list.
-- Also copy symbol, factor_name, and family exactly from the same candidate.
+- Also copy symbol and factor_name exactly from the same candidate.
+- If family is present in a candidate, copy it exactly; if family is absent, omit it from that decision.
 - If you are unsure about a candidate, choose drop rather than inventing a new factor identity.
 - Set global_assessment to exactly one of: mostly_positive, mixed, mostly_negative.
 - Set confidence as your calibrated certainty in [0, 1]; do not copy the schema example blindly.
@@ -60,7 +62,6 @@ Return JSON with this exact schema:
       "candidate_id": "C000",
       "symbol": "...",
       "factor_name": "...",
-      "family": "...",
       "decision": "keep/drop",
       "active_regime": "uncertain",
       "confidence": 0.65,
@@ -267,11 +268,14 @@ def evaluate_llm_decisions(
     candidate_frame = candidate_frame_from_view(reasoning_view or {})
     working = decisions.copy()
     if "candidate_id" in working.columns and not candidate_frame.empty and "candidate_id" in candidate_frame.columns:
-        candidate_cols = ["candidate_id", "symbol", "factor_name", "family"]
+        candidate_cols = [c for c in ["candidate_id", "symbol", "factor_name", "family"] if c in candidate_frame.columns]
         candidate_map = candidate_frame.loc[:, candidate_cols].drop_duplicates("candidate_id")
         working = working.drop(columns=[c for c in ["symbol", "factor_name", "family"] if c in working.columns])
         working = working.merge(candidate_map, on="candidate_id", how="left")
-    merged = working.merge(table[metric_cols + ["family"] + optional_cols], on=["symbol", "factor_name", "family"], how="left")
+    merge_keys = ["symbol", "factor_name"]
+    if "family" in working.columns:
+        merge_keys.append("family")
+    merged = working.merge(table[metric_cols + ["family"] + optional_cols], on=merge_keys, how="left")
     keep = merged["llm_decision"] == "keep"
     valid_strategy_sharpe = merged["test_strategy_sharpe"].notna()
     valid_cum_return = merged["test_strategy_cum_return"].notna()

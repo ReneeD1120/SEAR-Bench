@@ -43,6 +43,8 @@ def main() -> None:
     p_reason.add_argument("--diagnostic-leaky", action="store_true")
     p_reason.add_argument("--include-evidence-tags", action="store_true")
     p_reason.add_argument("--factor-sample-size", type=int, default=6)
+    p_reason.add_argument("--include-family", action="store_true")
+    p_reason.add_argument("--include-family-summary", action="store_true")
     p_llm = sub.add_parser("llm")
     p_llm.add_argument("--zip-path", required=True)
     p_llm.add_argument("--limit", type=int, default=10)
@@ -63,6 +65,8 @@ def main() -> None:
     p_llm.add_argument("--dry-run", action="store_true")
     p_llm.add_argument("--include-evidence-tags", action="store_true")
     p_llm.add_argument("--factor-sample-size", type=int, default=6)
+    p_llm.add_argument("--include-family", action="store_true")
+    p_llm.add_argument("--include-family-summary", action="store_true")
     args = parser.parse_args()
     if args.cmd == "synthetic":
         config = SyntheticConfig(n_assets=args.n_assets, n_days=args.n_days, seed=args.seed)
@@ -99,6 +103,8 @@ def main() -> None:
                 top_k=args.top_k,
                 include_tags=args.include_evidence_tags,
                 factor_sample_size=args.factor_sample_size,
+                include_family=args.include_family,
+                include_family_summary=args.include_family_summary,
             )
         )
         print(json.dumps(view, indent=2, sort_keys=True))
@@ -109,6 +115,8 @@ def main() -> None:
             top_k=args.top_k,
             include_tags=args.include_evidence_tags,
             factor_sample_size=args.factor_sample_size,
+            include_family=args.include_family,
+            include_family_summary=args.include_family_summary,
         )
         leakage_findings = audit_llm_reasoning_view(view)
         if leakage_findings:
@@ -165,6 +173,8 @@ def main() -> None:
         summary["top_k"] = float(args.top_k)
         summary["include_evidence_tags"] = float(args.include_evidence_tags)
         summary["factor_sample_size"] = float(args.factor_sample_size)
+        summary["include_family"] = float(args.include_family)
+        summary["include_family_summary"] = float(args.include_family_summary)
         decisions_out = Path(args.decisions_out)
         decisions_out.parent.mkdir(parents=True, exist_ok=True)
         scored.to_csv(decisions_out, index=False)

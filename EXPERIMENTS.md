@@ -293,3 +293,24 @@ Notes:
 - These are clean runs where the LLM sees factor formulas and train-only factor values, without evidence tags.
 - Kept candidates outperform dropped candidates on held-out Sharpe in both small clean runs, but the `top_k=5` run is overly permissive: it keeps 14 of 15 candidates, emits `active_regime=uncertain` for every candidate, and reuses the same confidence/rationale pattern.
 - The next robustness step is to use a stronger local model or stricter deliberation prompt, then compare numeric-only versus tag-assisted reasoning under the same candidate set.
+
+## Family Leakage Audit
+
+Concern:
+
+- Synthetic labels were assigned by `family`, while the synthetic data-generating process only made a small set of named factors truly active.
+- The formal LLM view exposed `family` and `family_summary`, and the prompt encouraged "family-level support", so an LLM could rely on family priors instead of candidate-level evidence.
+
+Fix:
+
+- Synthetic labels are now assigned only by the data-generating factor names: `momentum_20d`, `reversal_5d`, and `volume_surge` are true positives; `range_pct`, `close_to_open`, and `noise_factor` are explicit decoys; all other expanded factors default to inactive for synthetic label accuracy.
+- The formal LLM view is now family-blind by default: candidates expose `factor_name`, `formula`, train-only factor samples, and train-only evidence, but not `family`.
+- `family_summary` is no longer emitted by default.
+- `--include-family` and `--include-family-summary` enable family-assisted ablations only.
+- The prompt no longer recommends family-level support in the formal decision rule.
+
+Validation:
+
+- Default LLM view: `has_family=False`, `has_family_summary=False`.
+- Ablation view with flags: `has_family=True`, `has_family_summary=True`.
+- Example synthetic labels after the fix: `momentum_20d=keep`, `reversal_5d=keep`, `volume_surge=keep`, while `mom_20d`, `volume_ratio_20`, and `noise_factor` are not automatically kept.

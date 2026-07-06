@@ -35,8 +35,8 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - `LinearEvidenceJudge` learns a lightweight scorer from synthetic labels.
    - Both judges only consume in-sample structured evidence.
 5. Build an agent reasoning view:
-   - family-level summaries rank the most promising factor families
-   - top factor candidates provide `factor_name`, `family`, `formula`, train-only `train_factor_sample`, and train-only statistical evidence
+   - the formal view is family-blind by default: no `family` field and no `family_summary`
+   - top factor candidates provide `factor_name`, `formula`, train-only `train_factor_sample`, and train-only statistical evidence
    - `--factor-sample-size` controls how many train-only factor values are sent to the LLM; use small values for local GPU models
    - the `sear reason` command emits this view as JSON for a downstream LLM agent
    - `sear reason` defaults to the leakage-free version used by `sear llm`
@@ -49,6 +49,7 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - The LLM can inspect factor names, formulas, train-only factor samples, and train-only evidence.
    - The LLM still cannot inspect raw prices, hidden labels, rule decisions, or held-out test metrics.
    - `--include-evidence-tags` enables a tag-assisted ablation; it is not the default formal reasoning view.
+   - `--include-family` and `--include-family-summary` enable family-assisted ablations; they are not the default formal reasoning view.
 7. Evaluate:
    - synthetic: keep accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
    - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown
@@ -80,6 +81,7 @@ sear llm --backend hf-local --zip-path /Users/renee/Downloads/RAFPO/前复权.zi
 - If regime accuracy is high, the judge can infer the active market regime.
 - If kept factors have higher out-of-sample strategy Sharpe than dropped factors, the reasoning layer is selecting economically useful candidates.
 - On real data, the benchmark checks whether the scoring pipeline produces stable factor rankings, sensible train/test IC separation, and family-level return evidence.
+- Family-assisted results should be reported as ablations. The main LLM benchmark should be family-blind so the model cannot solve the task by memorizing factor-family priors.
 
 ## Current Limitation
 
