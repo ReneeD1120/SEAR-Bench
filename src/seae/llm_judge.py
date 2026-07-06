@@ -33,6 +33,9 @@ Agentic reasoning protocol:
 - Explicitly check counter-evidence before deciding.
 - Decide active_regime from train_regime_ic_high_vol, train_regime_ic_low_vol, and train_regime_contrast when evidence supports it.
 - Use uncertain only when the regime evidence is weak or contradictory.
+- Cite concrete structured evidence before deciding. Each candidate must include evidence_quotes.
+- evidence_quotes must reference metric names exactly as provided in the candidate, with the numeric value you used.
+- Use at least one support quote and one counter quote per candidate when both exist.
 - Be conservative when evidence conflicts, but do not use a fixed keep/drop template.
 - Do not invent data or mention raw price patterns.
 - Do not compare against risk-free rates, transaction costs, sectors, or any baseline that is not explicitly present in the structured evidence.
@@ -76,6 +79,11 @@ Each decision object must contain:
   - counter_evidence: strongest train-only evidence against usefulness
   - regime_summary: why the active_regime was selected
   - decision_logic: why keep/drop follows from the evidence balance
+- evidence_quotes: list of 3 to 5 objects. Each object must contain:
+  - metric: exact metric name from the candidate
+  - value: numeric metric value copied or rounded from the candidate
+  - role: support, counter, or regime
+  - interpretation: concise statement of how this metric affects the decision
 
 Structured evidence:
 {evidence_json}
@@ -118,7 +126,7 @@ def build_revision_messages(
 ) -> list[dict[str, str]]:
     clean_view = _finite_json_value(reasoning_view)
     clean_response = _finite_json_value(previous_response)
-    clean_feedback = _finite_json_value(critic_feedback)
+    clean_feedback = _finite_json_value(_compact_critic_feedback(critic_feedback))
     evidence_json = json.dumps(clean_view, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     response_json = json.dumps(clean_response, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     feedback_json = json.dumps(clean_feedback, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -129,10 +137,17 @@ Rules:
 - Preserve candidate_id, symbol, and factor_name exactly.
 - Return the same agentic_evidence_audit_v1 JSON schema.
 - Treat critic issues as mandatory repair instructions.
+- Repair only failed candidates if possible, but still return all candidates.
+- evidence_quotes are mandatory. Use exact metric names and copied or rounded numeric values from Structured evidence.
+- Include at least 3 evidence_quotes per candidate, with support/counter/regime roles when available.
 - If issue is support_summary_negative, rewrite support_summary using only positive train evidence such as high train strategy Sharpe, stability, sufficient history, or favorable IC.
 - If issue is counter_evidence_positive, rewrite counter_evidence using only risks such as negative IC, low win rate, drawdown, weak stability, or conflicting evidence.
 - If issue is regime_mismatch and expected_regime is high_vol or low_vol, set active_regime to that expected_regime unless the structured evidence is missing.
 - If issue is decision_logic_conflict, either change keep/drop or rewrite decision_logic so it matches the decision.
+- If issue is evidence_quote_missing, add grounded evidence_quotes.
+- If issue is evidence_quote_invalid_metric, replace invalid metric names with exact train metric keys.
+- If issue is evidence_quote_value_mismatch, copy/round the value from Structured evidence.
+- If issue is evidence_quote_missing_roles, include both support and counter evidence when available.
 - Keep evidence_audit fields concise, at most 12 words each.
 - Return compact JSON only.
 
@@ -262,6 +277,10 @@ def normalize_llm_decisions(response: dict[str, object]) -> pd.DataFrame:
         if not isinstance(evidence_audit, dict):
             evidence_audit = {}
         audit_json = json.dumps(evidence_audit, ensure_ascii=False, sort_keys=True) if evidence_audit else ""
+        evidence_quotes = item.get("evidence_quotes", [])
+        if not isinstance(evidence_quotes, list):
+            evidence_quotes = []
+        quotes_json = json.dumps(evidence_quotes, ensure_ascii=False, sort_keys=True) if evidence_quotes else ""
         rows.append(
             {
                 "candidate_id": str(item.get("candidate_id", "")),
@@ -278,6 +297,7 @@ def normalize_llm_decisions(response: dict[str, object]) -> pd.DataFrame:
                 "llm_regime_summary": str(evidence_audit.get("regime_summary", "")),
                 "llm_decision_logic": str(evidence_audit.get("decision_logic", "")),
                 "llm_evidence_audit": audit_json,
+                "llm_evidence_quotes": quotes_json,
             }
         )
     return pd.DataFrame(rows)
@@ -331,9 +351,101 @@ NEGATIVE_EVIDENCE_TERMS = {
 }
 
 
+TRAIN_EVIDENCE_METRICS = {
+    "train_ic",
+    "train_ic_ir",
+    "train_win_rate",
+    "train_stability",
+    "train_n_obs",
+    "train_regime_ic_high_vol",
+    "train_regime_ic_low_vol",
+    "train_regime_contrast",
+    "train_strategy_mean_return",
+    "train_strategy_sharpe",
+    "train_strategy_cum_return",
+    "train_strategy_max_drawdown",
+}
+
+
 def _count_terms(text: object, terms: set[str]) -> int:
     tokens = re.findall(r"[a-z_]+", str(text).lower())
     return sum(1 for token in tokens if token in terms)
+
+
+def _parse_evidence_quotes(value: object) -> list[dict[str, object]]:
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            items = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    else:
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _quote_value_matches(expected: object, observed: object) -> bool:
+    try:
+        expected_value = float(expected)
+        observed_value = float(observed)
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(expected_value) or not math.isfinite(observed_value):
+        return False
+    tolerance = max(1e-4, abs(expected_value) * 0.02)
+    if abs(expected_value) >= 100:
+        tolerance = max(tolerance, 1.0)
+    return abs(expected_value - observed_value) <= tolerance
+
+
+def _quote_diagnostics(row: pd.Series) -> dict[str, object]:
+    quotes = _parse_evidence_quotes(row.get("llm_evidence_quotes", ""))
+    if not quotes:
+        return {
+            "quote_count": 0.0,
+            "quote_valid_metric_rate": 0.0,
+            "quote_value_match_rate": 0.0,
+            "quote_support_count": 0.0,
+            "quote_counter_count": 0.0,
+            "quote_regime_count": 0.0,
+            "quote_grounded_ok": False,
+            "quote_role_coverage_ok": False,
+            "invalid_quote_metrics": [],
+        }
+
+    valid_metric_count = 0
+    value_match_count = 0
+    invalid_metrics: list[str] = []
+    role_counts = {"support": 0, "counter": 0, "regime": 0}
+    for quote in quotes:
+        metric = str(quote.get("metric", "")).strip()
+        role = str(quote.get("role", "")).lower().strip()
+        if role in role_counts:
+            role_counts[role] += 1
+        if metric not in TRAIN_EVIDENCE_METRICS or metric not in row.index:
+            invalid_metrics.append(metric)
+            continue
+        valid_metric_count += 1
+        if _quote_value_matches(row.get(metric), quote.get("value")):
+            value_match_count += 1
+
+    quote_count = len(quotes)
+    valid_metric_rate = valid_metric_count / quote_count
+    value_match_rate = value_match_count / quote_count
+    grounded_ok = quote_count >= 3 and valid_metric_rate >= 0.8 and value_match_rate >= 0.8
+    role_coverage_ok = role_counts["support"] >= 1 and role_counts["counter"] >= 1
+    return {
+        "quote_count": float(quote_count),
+        "quote_valid_metric_rate": float(valid_metric_rate),
+        "quote_value_match_rate": float(value_match_rate),
+        "quote_support_count": float(role_counts["support"]),
+        "quote_counter_count": float(role_counts["counter"]),
+        "quote_regime_count": float(role_counts["regime"]),
+        "quote_grounded_ok": bool(grounded_ok),
+        "quote_role_coverage_ok": bool(role_coverage_ok),
+        "invalid_quote_metrics": invalid_metrics,
+    }
 
 
 def _expected_regime(row: pd.Series, *, min_contrast: float = 0.02) -> str:
@@ -405,10 +517,18 @@ def add_explanation_faithfulness(scored: pd.DataFrame) -> pd.DataFrame:
         lambda row: _decision_conflicts_with_logic(row["llm_decision"], row["llm_decision_logic"]),
         axis=1,
     )
+    if "llm_evidence_quotes" in out.columns:
+        quote_diag = out.apply(_quote_diagnostics, axis=1, result_type="expand")
+        out = pd.concat([out, quote_diag], axis=1)
+    else:
+        out["quote_grounded_ok"] = False
+        out["quote_role_coverage_ok"] = False
     out["faithfulness_ok"] = (
         out["faith_support_polarity_ok"]
         & out["faith_counter_polarity_ok"]
         & out["faith_regime_ok"]
+        & out["quote_grounded_ok"]
+        & out["quote_role_coverage_ok"]
         & ~out["faith_decision_conflict"]
     )
     return out
@@ -488,6 +608,22 @@ def critique_response_against_view(
             issues.append("decision_logic_conflict")
             suggestions.append("Decision logic contradicts keep/drop; rewrite it or change the decision.")
 
+        quote_diag = _quote_diagnostics(pd.concat([candidate, pd.Series(decision)]))
+        if float(quote_diag["quote_count"]) < 3:
+            issues.append("evidence_quote_missing")
+            suggestions.append("Add 3 to 5 evidence_quotes with exact train metric names and values.")
+        if float(quote_diag["quote_valid_metric_rate"]) < 0.8:
+            issues.append("evidence_quote_invalid_metric")
+            bad_metrics = ", ".join(str(x) for x in quote_diag.get("invalid_quote_metrics", []) if x)
+            suffix = f" Invalid metrics: {bad_metrics}." if bad_metrics else ""
+            suggestions.append(f"Use only exact train metric keys such as train_ic or train_strategy_sharpe.{suffix}")
+        if float(quote_diag["quote_value_match_rate"]) < 0.8:
+            issues.append("evidence_quote_value_mismatch")
+            suggestions.append("Copy or round numeric quote values from the structured evidence.")
+        if not bool(quote_diag["quote_role_coverage_ok"]):
+            issues.append("evidence_quote_missing_roles")
+            suggestions.append("Include at least one support quote and one counter quote.")
+
         feedback_rows.append(
             {
                 "candidate_id": candidate_id,
@@ -511,6 +647,33 @@ def critique_response_against_view(
             "pass_rate": float((n_candidates - n_failed) / n_candidates) if n_candidates else float("nan"),
         },
         "feedback": feedback_rows,
+    }
+
+
+def _compact_critic_feedback(critic_feedback: dict[str, object]) -> dict[str, object]:
+    """Keep revision feedback short and action-oriented for small local models."""
+    if not isinstance(critic_feedback, dict):
+        return {}
+    feedback = critic_feedback.get("feedback", [])
+    failed_rows = []
+    if isinstance(feedback, list):
+        for row in feedback:
+            if not isinstance(row, dict) or row.get("passed", False):
+                continue
+            failed_rows.append(
+                {
+                    "candidate_id": row.get("candidate_id", ""),
+                    "factor_name": row.get("factor_name", ""),
+                    "issues": row.get("issues", []),
+                    "expected_regime": row.get("expected_regime", ""),
+                    "suggestions": row.get("suggestions", [])[:4],
+                }
+            )
+    return {
+        "critic_role": critic_feedback.get("critic_role", "train_only_evidence_critic"),
+        "held_out_metrics_visible": critic_feedback.get("held_out_metrics_visible", False),
+        "summary": critic_feedback.get("summary", {}),
+        "failed_candidates": failed_rows,
     }
 
 
@@ -625,6 +788,8 @@ def evaluate_llm_decisions(
         "faith_counter_polarity_ok",
         "faith_regime_ok",
         "faith_decision_conflict",
+        "quote_grounded_ok",
+        "quote_role_coverage_ok",
         "faithfulness_ok",
     ]:
         if column in merged.columns:
@@ -633,11 +798,22 @@ def evaluate_llm_decisions(
             else:
                 summary[f"{column}_rate"] = float(merged[column].mean())
     for column in [
+        "quote_count",
+        "quote_valid_metric_rate",
+        "quote_value_match_rate",
+        "quote_support_count",
+        "quote_counter_count",
+        "quote_regime_count",
+    ]:
+        if column in merged.columns:
+            summary[f"mean_{column}"] = float(merged[column].mean())
+    for column in [
         "llm_formula_hypothesis",
         "llm_support_summary",
         "llm_counter_evidence",
         "llm_regime_summary",
         "llm_decision_logic",
+        "llm_evidence_quotes",
     ]:
         if column in merged.columns:
             summary[f"{column}_nonempty_rate"] = _nonempty_text_rate(merged[column])

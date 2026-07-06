@@ -47,6 +47,8 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - Qwen is the first open-source target model.
    - The LLM must return strict JSON keep/drop, active regime, confidence, and an `evidence_audit`.
    - `evidence_audit` contains formula hypothesis, support summary, counter-evidence, regime summary, and decision logic for each candidate.
+   - `evidence_quotes` binds each explanation to concrete train-only metric names and values.
+   - Quote grounding is scored separately: valid metric names, numeric value matches, support/counter role coverage, and overall grounded quote rate.
    - The LLM can inspect factor names, formulas, train-only factor samples, and train-only evidence.
    - The LLM still cannot inspect raw prices, hidden labels, rule decisions, or held-out test metrics.
    - `--include-evidence-tags` enables a tag-assisted ablation; it is not the default formal reasoning view.
@@ -66,11 +68,12 @@ The current bounded audit is a single-pass agentic baseline. A stronger reasonin
 
 1. Hypothesis generation: infer the economic meaning of each formula.
 2. Evidence audit: summarize train-only support and counter-evidence.
-3. Regime specialist: decide whether high-vol, low-vol, none, or uncertain is supported.
-4. Critic: check whether support/counter/regime statements are faithful to the structured evidence.
-5. Revision: force the model to repair contradicted explanations before final keep/drop.
-6. Final judge: output decisions only after the critic passes.
-7. Benchmark: score decisions on held-out IC, strategy Sharpe, portfolio backtest, and explanation faithfulness.
+3. Evidence binding: cite exact train metric names and values used as support, counter-evidence, or regime evidence.
+4. Regime specialist: decide whether high-vol, low-vol, none, or uncertain is supported.
+5. Critic: check whether support/counter/regime statements are faithful to the structured evidence and whether quotes are grounded.
+6. Revision: force the model to repair contradicted explanations and invalid evidence quotes before final keep/drop.
+7. Final judge: output decisions only after the critic passes.
+8. Benchmark: score decisions on held-out IC, strategy Sharpe, portfolio backtest, and explanation faithfulness.
 
 This keeps the LLM in the decision/explanation role while making reasoning quality measurable.
 
@@ -80,7 +83,7 @@ The implemented revision workflow is:
 sear llm ... --revision-rounds 1 --critic-out outputs/critic.json
 ```
 
-The critic is deterministic and train-only. It checks audit-field polarity, regime consistency, and decision-logic contradictions before asking the LLM to revise. Held-out metrics are joined only after the final response.
+The critic is deterministic and train-only. It checks audit-field polarity, regime consistency, decision-logic contradictions, and grounded `evidence_quotes` before asking the LLM to revise. Held-out metrics are joined only after the final response.
 
 ## Outputs
 

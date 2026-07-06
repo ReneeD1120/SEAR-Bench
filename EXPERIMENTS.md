@@ -487,3 +487,51 @@ Interpretation:
 - Transaction costs matter: high turnover pushes net Sharpe materially lower.
 - The earlier single-factor proxy Sharpe separation does not automatically translate into portfolio-level profitability.
 - Portfolio-level backtest should become a required benchmark metric before claiming financial usefulness.
+
+## Critic-Guided Repair Loop
+
+Revision setup:
+
+- Command pattern: `sear llm ... --revision-rounds 1 --critic-out outputs\critic.json`.
+- The critic uses only the family-blind train evidence view.
+- Held-out test IC, held-out strategy metrics, labels, and rule decisions remain hidden until final scoring.
+- The critic checks audit-field polarity, regime consistency, and decision-logic contradictions.
+
+Qwen2.5-3B repair result, `limit=5`, `top_k=3`, `factor_sample_size=2`, `max_new_tokens=2048`:
+
+- Output files: `outputs\qwen25_3b_repair_*_l5_t3_s2_2048.*`.
+- `revision_rounds_completed=1`.
+- `critic_pass_rate=0.4444`.
+- `critic_n_failed=5`.
+- `faithfulness_ok_rate=0.4444`.
+- `mean_test_ic_kept=0.0333`, `mean_test_ic_dropped=0.0052`.
+- `mean_test_strategy_sharpe_kept=0.0036`, `mean_test_strategy_sharpe_dropped=-0.0830`.
+- `non_uncertain_regime_rate=0.5556`.
+- `regime_unique_count=4`.
+
+Interpretation:
+
+- The repair loop did not improve Qwen2.5-3B explanation faithfulness.
+- The final held-out selection metrics are unchanged relative to the bounded top-k=3 agentic-audit run.
+- Stronger repair wording alone is not sufficient for strong reasoning at this model size.
+- This is a useful negative result: SEAR-Bench can distinguish JSON compliance from evidence-faithful reasoning.
+
+## Evidence-Bound Strong Reasoning Update
+
+Motivation:
+
+- Natural-language `evidence_audit` fields are too easy to satisfy with generic statements.
+- A stronger agentic-reasoning benchmark needs to test whether explanations are grounded in the actual structured metrics.
+
+Protocol update:
+
+- Each LLM decision now must include `evidence_quotes`.
+- Each quote contains an exact train metric name, a copied or rounded numeric value, a role (`support`, `counter`, or `regime`), and a short interpretation.
+- The formal LLM view remains family-blind and leakage-free by default.
+- New faithfulness metrics include quote count, valid metric-name rate, numeric value-match rate, support/counter role coverage, quote grounded rate, and overall faithfulness.
+
+Research implication:
+
+- The next strong-reasoning experiment should compare model sizes under this evidence-bound protocol.
+- A credible AAAI benchmark table should report decision quality, explanation faithfulness, and portfolio performance together.
+- Qwen2.5-3B should be presented as a weak open-source baseline, not as the final strong-reasoning result.
