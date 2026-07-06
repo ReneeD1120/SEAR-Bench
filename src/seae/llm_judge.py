@@ -21,16 +21,19 @@ Return strict JSON only."""
 
 USER_PROMPT_TEMPLATE = """We are testing structured-evidence agentic reasoning for factor validity.
 
-Decision protocol:
+Agentic reasoning protocol:
 - Use only the provided structured evidence.
 - Each candidate includes factor_name, formula, train_factor_sample, and train evidence.
-- Use formula to interpret the economic meaning of the factor.
+- First form a candidate-specific hypothesis from formula and factor_name.
 - Use train_factor_sample only as in-sample factor behavior, not as future performance.
 - A factor can be useful even if IC is negative, if the oriented strategy proxy is strong.
 - Some ablation views may include evidence_tags. If present, treat them as derived train-only summaries, not labels or benchmark answers.
 - Some ablation views may include family or family_summary. If present, treat them only as coarse metadata, not as a decision rule.
 - Prefer factors with consistent train evidence, stronger train strategy Sharpe, acceptable drawdown, and sufficient train_n_obs.
-- Be conservative when evidence conflicts.
+- Explicitly check counter-evidence before deciding.
+- Decide active_regime from train_regime_ic_high_vol, train_regime_ic_low_vol, and train_regime_contrast when evidence supports it.
+- Use uncertain only when the regime evidence is weak or contradictory.
+- Be conservative when evidence conflicts, but do not use a fixed keep/drop template.
 - Do not invent data or mention raw price patterns.
 - Do not compare against risk-free rates, transaction costs, sectors, or any baseline that is not explicitly present in the structured evidence.
 - If a field is missing, say it is unavailable instead of inferring it.
@@ -41,10 +44,9 @@ Decision protocol:
 - If family is present in a candidate, copy it exactly; if family is absent, omit it from that decision.
 - If you are unsure about a candidate, choose drop rather than inventing a new factor identity.
 - Set global_assessment to exactly one of: mostly_positive, mixed, mostly_negative.
-- Set confidence as your calibrated certainty in [0, 1]; do not copy the schema example blindly.
-- Keep each rationale as 1-3 semicolon-separated reason codes.
-- Allowed reason codes: strong_train_strategy, weak_train_strategy, ic_support, ic_conflict, stable, unstable, drawdown_risk, regime_contrast, sufficient_history, insufficient_history.
-- Do not write prose explanations or restate numeric metrics in rationale.
+- Set confidence as your calibrated certainty in [0, 1]. It should vary across candidates when the evidence differs.
+- Do not copy example values. Repeated identical confidence, regime, or rationale across all candidates is considered failed reasoning.
+- Use concise natural language in evidence_audit. Do not output hidden chain-of-thought; output only the final audit summary.
 - Return compact JSON only; do not include markdown fences, comments, or trailing text.
 
 Allowed regimes:
@@ -53,22 +55,25 @@ Allowed regimes:
 - none
 - uncertain
 
-Return JSON with this exact schema:
-{{
-  "model_role": "structured_evidence_reasoner",
-  "global_assessment": "mixed",
-    "decisions": [
-    {{
-      "candidate_id": "C000",
-      "symbol": "...",
-      "factor_name": "...",
-      "decision": "keep/drop",
-      "active_regime": "uncertain",
-      "confidence": 0.65,
-      "rationale": "ic_conflict; strong_train_strategy"
-    }}
-  ]
-}}
+Return one JSON object with these top-level keys:
+- model_role: exactly "structured_evidence_reasoner"
+- reasoning_protocol: exactly "agentic_evidence_audit_v1"
+- global_assessment: one of mostly_positive, mixed, mostly_negative
+- decisions: list with exactly one object per candidate
+
+Each decision object must contain:
+- candidate_id
+- symbol
+- factor_name
+- decision: keep or drop
+- active_regime: high_vol, low_vol, none, or uncertain
+- confidence: number in [0, 1]
+- evidence_audit: object with exactly these string fields:
+  - formula_hypothesis: what the formula is trying to capture
+  - support_summary: strongest train-only evidence supporting usefulness
+  - counter_evidence: strongest train-only evidence against usefulness
+  - regime_summary: why the active_regime was selected
+  - decision_logic: why keep/drop follows from the evidence balance
 
 Structured evidence:
 {evidence_json}
@@ -211,6 +216,10 @@ def normalize_llm_decisions(response: dict[str, object]) -> pd.DataFrame:
         active_regime = str(item.get("active_regime", "uncertain")).lower().strip()
         if active_regime not in {"high_vol", "low_vol", "none", "uncertain"}:
             active_regime = "uncertain"
+        evidence_audit = item.get("evidence_audit", {})
+        if not isinstance(evidence_audit, dict):
+            evidence_audit = {}
+        audit_json = json.dumps(evidence_audit, ensure_ascii=False, sort_keys=True) if evidence_audit else ""
         rows.append(
             {
                 "candidate_id": str(item.get("candidate_id", "")),
@@ -221,9 +230,31 @@ def normalize_llm_decisions(response: dict[str, object]) -> pd.DataFrame:
                 "llm_active_regime": active_regime,
                 "llm_confidence": max(0.0, min(1.0, confidence)),
                 "llm_rationale": str(item.get("rationale", "")),
+                "llm_formula_hypothesis": str(evidence_audit.get("formula_hypothesis", "")),
+                "llm_support_summary": str(evidence_audit.get("support_summary", "")),
+                "llm_counter_evidence": str(evidence_audit.get("counter_evidence", "")),
+                "llm_regime_summary": str(evidence_audit.get("regime_summary", "")),
+                "llm_decision_logic": str(evidence_audit.get("decision_logic", "")),
+                "llm_evidence_audit": audit_json,
             }
         )
     return pd.DataFrame(rows)
+
+
+def _nonempty_text_rate(series: pd.Series) -> float:
+    if series.empty:
+        return float("nan")
+    return float(series.fillna("").astype(str).str.strip().ne("").mean())
+
+
+def _unique_text_rate(series: pd.Series) -> float:
+    if series.empty:
+        return float("nan")
+    normalized = series.fillna("").astype(str).str.strip()
+    nonempty = normalized[normalized.ne("")]
+    if nonempty.empty:
+        return 0.0
+    return float(nonempty.nunique() / len(nonempty))
 
 
 def candidate_frame_from_view(reasoning_view: dict[str, object]) -> pd.DataFrame:
@@ -293,6 +324,25 @@ def evaluate_llm_decisions(
         "mean_test_strategy_sharpe_kept": float(merged.loc[keep, "test_strategy_sharpe"].mean()),
         "mean_test_strategy_sharpe_dropped": float(merged.loc[~keep, "test_strategy_sharpe"].mean()),
     }
+    if "llm_confidence" in merged.columns:
+        summary["confidence_unique_count"] = float(merged["llm_confidence"].nunique(dropna=True))
+        summary["confidence_std"] = float(merged["llm_confidence"].std(ddof=0))
+    if "llm_active_regime" in merged.columns:
+        summary["non_uncertain_regime_rate"] = float((merged["llm_active_regime"] != "uncertain").mean())
+        summary["regime_unique_count"] = float(merged["llm_active_regime"].nunique(dropna=True))
+    if "llm_evidence_audit" in merged.columns:
+        summary["evidence_audit_nonempty_rate"] = _nonempty_text_rate(merged["llm_evidence_audit"])
+        summary["evidence_audit_unique_rate"] = _unique_text_rate(merged["llm_evidence_audit"])
+    for column in [
+        "llm_formula_hypothesis",
+        "llm_support_summary",
+        "llm_counter_evidence",
+        "llm_regime_summary",
+        "llm_decision_logic",
+    ]:
+        if column in merged.columns:
+            summary[f"{column}_nonempty_rate"] = _nonempty_text_rate(merged[column])
+            summary[f"{column}_unique_rate"] = _unique_text_rate(merged[column])
     if "decision" in merged.columns:
         summary["rule_agreement_rate"] = float((merged["llm_decision"] == merged["decision"]).mean())
     if "label_keep" in merged.columns:

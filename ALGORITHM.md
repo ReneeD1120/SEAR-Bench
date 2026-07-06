@@ -45,7 +45,8 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
    - `sear llm` sends the structured evidence view to an OpenAI-compatible chat endpoint.
    - `sear llm --backend hf-local` can also call a Hugging Face `transformers` model directly.
    - Qwen is the first open-source target model.
-   - The LLM must return strict JSON keep/drop, active regime, confidence, and rationale fields.
+   - The LLM must return strict JSON keep/drop, active regime, confidence, and an `evidence_audit`.
+   - `evidence_audit` contains formula hypothesis, support summary, counter-evidence, regime summary, and decision logic for each candidate.
    - The LLM can inspect factor names, formulas, train-only factor samples, and train-only evidence.
    - The LLM still cannot inspect raw prices, hidden labels, rule decisions, or held-out test metrics.
    - `--include-evidence-tags` enables a tag-assisted ablation; it is not the default formal reasoning view.
@@ -53,7 +54,8 @@ SEAR-Bench studies whether a structured-evidence agent can judge factor validity
 7. Evaluate:
    - synthetic: keep accuracy, keep precision/recall/balanced accuracy, regime accuracy, mean test IC of kept vs dropped factors, and mean test strategy Sharpe of kept vs dropped factors
    - real market: average train/test IC, keep rate, family ablation, strategy Sharpe, cumulative return, and drawdown
-   - LLM: kept vs dropped test IC/Sharpe, rule agreement, and synthetic label accuracy when labels exist
+   - LLM: kept vs dropped test IC/Sharpe, rule agreement, synthetic label accuracy when labels exist, and reasoning-quality diagnostics
+   - reasoning diagnostics include confidence diversity, non-uncertain regime rate, audit non-empty rate, and audit uniqueness rate
 
 ## Outputs
 

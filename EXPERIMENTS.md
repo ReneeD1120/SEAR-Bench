@@ -350,3 +350,37 @@ Interpretation:
 - The family-blind 3B run still shows weak positive Sharpe separation, but it does not improve held-out IC separation.
 - Explanation quality remains weak: Qwen2.5-3B repeats `confidence=0.65` and `active_regime=uncertain` for every candidate.
 - Qwen2.5-7B is not automatically better under the current prompt: full 15-candidate inference OOMs, and the smaller 9-candidate run degenerates to all-keep.
+
+## Agentic Evidence Audit Protocol
+
+Motivation:
+
+- The compact reason-code prompt produced valid JSON but not strong reasoning.
+- Qwen2.5-3B repeated `confidence=0.65`, selected `active_regime=uncertain` for every candidate, and reused very similar rationales.
+- This means the prior protocol measured JSON compliance and weak decision separation more than agentic reasoning.
+
+Protocol change:
+
+- The formal LLM output now uses `reasoning_protocol=agentic_evidence_audit_v1`.
+- Each candidate must provide an `evidence_audit` with:
+  - `formula_hypothesis`
+  - `support_summary`
+  - `counter_evidence`
+  - `regime_summary`
+  - `decision_logic`
+- The prompt explicitly asks the model to check counter-evidence and select non-uncertain regimes when train regime evidence supports it.
+
+New diagnostics:
+
+- `confidence_unique_count`
+- `confidence_std`
+- `non_uncertain_regime_rate`
+- `regime_unique_count`
+- `evidence_audit_nonempty_rate`
+- `evidence_audit_unique_rate`
+- field-level non-empty and uniqueness rates for formula hypothesis, support summary, counter-evidence, regime summary, and decision logic
+
+Interpretation:
+
+- Future agentic-reasoning results should be evaluated on both held-out financial metrics and these explanation diagnostics.
+- The older compact-rationale Qwen results remain useful baselines, but should not be presented as strong agentic reasoning.
